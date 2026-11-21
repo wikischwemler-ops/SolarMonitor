@@ -18,7 +18,7 @@
     --series-2: #eb6834;  /* PV1 */
     --series-3: #1baf7a;  /* PV2 */
     --sun: #eda100; --track: #e9e8e3;
-    --good: #0f7b3c; --warn: #a35f00;
+    --good: #0f7b3c; --warn: #a35f00; --bad: #b42318;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -26,7 +26,7 @@
       --bg: #121211; --surface-1: #1a1a19; --border: #2d2d2b; --grid: #262624;
       --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
       --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
-      --sun: #f2b52e; --track: #2a2a28; --good: #3fbf6f; --warn: #e0a030;
+      --sun: #f2b52e; --track: #2a2a28; --good: #3fbf6f; --warn: #e0a030; --bad: #f06a5d;
     }
   }
   :root[data-theme="dark"] {
@@ -34,7 +34,7 @@
     --bg: #121211; --surface-1: #1a1a19; --border: #2d2d2b; --grid: #262624;
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
     --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
-    --sun: #f2b52e; --track: #2a2a28; --good: #3fbf6f; --warn: #e0a030;
+    --sun: #f2b52e; --track: #2a2a28; --good: #3fbf6f; --warn: #e0a030; --bad: #f06a5d;
   }
   :root { --radius: 16px; --shadow: 0 1px 2px rgb(0 0 0 / .04), 0 10px 30px -14px rgb(0 0 0 / .14); }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --shadow: 0 1px 0 rgb(255 255 255 / .03) inset; } }
@@ -126,6 +126,27 @@
   td:first-child { color: var(--text-secondary); }
   tr:last-child td { border-bottom: 0; }
   footer { margin-top: 20px; font-size: 12px; color: var(--text-muted); }
+
+  /* ---- Ertraege: Zeitraeume ---- */
+  .periods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .periods > div { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+  .periods .l { font-size: 12px; color: var(--text-secondary); }
+  .periods .v { font-size: 20px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .periods .v small { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-left: 2px; }
+  .periods .h { font-size: 11px; color: var(--text-muted); }
+
+  /* ---- Verbindung ---- */
+  .conn { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .conn > div { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; min-width: 0; }
+  .conn .l { font-size: 12px; color: var(--text-secondary); }
+  .conn .v { font-size: 22px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; margin: 2px 0; white-space: nowrap; }
+  .conn .v small { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-left: 2px; }
+  .q { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .bars i { width: 3px; border-radius: 1px; background: var(--track); }
+  .bars i:nth-child(1) { height: 4px; } .bars i:nth-child(2) { height: 7px; } .bars i:nth-child(3) { height: 10px; } .bars i:nth-child(4) { height: 12px; }
+  .q.good .bars i.on { background: var(--good); } .q.warn .bars i.on { background: var(--warn); } .q.bad .bars i.on { background: var(--bad); }
+  .q .h { color: var(--text-muted); }
   .fade-in { animation: fade .7s cubic-bezier(.2,.8,.2,1) both; }
   .kpis .fade-in:nth-child(2) { animation-delay: .06s; } .kpis .fade-in:nth-child(3) { animation-delay: .12s; } .kpis .fade-in:nth-child(4) { animation-delay: .18s; }
   @keyframes fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
@@ -135,6 +156,9 @@
     .kpis { grid-template-columns: repeat(2, 1fr); }
     .grid3 { grid-template-columns: 1fr 1fr; }
     .grid3 > :last-child { grid-column: 1 / -1; }
+    .conn { grid-template-columns: repeat(6, 1fr); }
+    .conn > div { grid-column: span 2; }
+    .conn > div:nth-child(n+4) { grid-column: span 3; }
   }
   /* Handy */
   @media (max-width: 640px) {
@@ -156,6 +180,11 @@
     .nav { margin-left: 0; width: 100%; }
     .nav input { flex: 1; }
     .card-head .note { width: 100%; order: 3; }
+    .periods { grid-template-columns: 1fr 1fr; }
+    .conn { grid-template-columns: 1fr 1fr; }
+    .conn > div, .conn > div:nth-child(n+4) { grid-column: auto; }
+    .conn > div:last-child { grid-column: 1 / -1; }
+    .conn .v { font-size: 19px; }
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before { animation: none !important; transition: none !important; }
@@ -266,16 +295,22 @@
     </div>
   </section>
 
-  <div class="grid2">
-    <section class="card fade-in">
-      <div class="card-head"><h2>Tageserträge</h2><span class="note">letzte 30 Tage, kWh</span></div>
-      <div class="chart"><canvas id="daysChart"></canvas></div>
-    </section>
-    <section class="card fade-in">
-      <div class="card-head"><h2>Monatserträge</h2><span class="note">kWh</span></div>
-      <div class="chart"><canvas id="monthChart"></canvas></div>
-    </section>
-  </div>
+  <!-- Ertraege -->
+  <section class="card fade-in" style="margin-top:16px">
+    <div class="card-head"><h2>Erträge</h2><span class="note" id="yieldNote"></span></div>
+    <div class="tabs" role="tablist" id="yieldTabs"></div>
+    <div class="periods" id="periods"></div>
+    <div class="chart"><canvas id="yieldChart"></canvas></div>
+  </section>
+
+  <!-- Verbindung -->
+  <section class="card fade-in" style="margin-top:16px">
+    <div class="card-head"><h2>Verbindung</h2><span class="note" id="connNote">Funk und Internet des ESP32</span></div>
+    <div class="conn" id="conn"></div>
+    <div class="tabs" role="tablist" id="connTabs" style="margin-top:16px"></div>
+    <div class="legend" id="connLegend"></div>
+    <div class="chart small"><canvas id="connChart"></canvas><div class="empty" id="connEmpty">Für diesen Tag gibt es noch keine Verbindungswerte</div></div>
+  </section>
 
   <div class="grid2">
     <section class="card fade-in">
@@ -416,6 +451,7 @@ async function loadDay(key) {
   } catch { dayRows = []; }
   drawDay(true);
   drawKennlinien();
+  drawConnChart();
 }
 
 function drawDay(fresh) {
@@ -493,18 +529,133 @@ function bars(id, labels, values, tipTitle) {
     borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: "start", maxBarThickness: 28, categoryPercentage: .85, barPercentage: .9 }] }, options: opt });
 }
 
+// Zeitraeume: Schluessel je Tag (YYYY-MM-DD) -> Woche (Montag), Monat, Jahr
+const addDays = (k, n) => { const d = new Date(k + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const monday = k => { const wd = (new Date(k + "T12:00:00Z").getUTCDay() + 6) % 7; return addDays(k, -wd); };
+const isoWeek = k => { const th = addDays(monday(k), 3), y = th.slice(0, 4);
+  return [y, 1 + Math.floor((Date.parse(th) - Date.parse(monday(y + "-01-04"))) / 6048e5)]; };
+const ddmm = k => `${k.slice(8)}.${k.slice(5, 7)}.`;
+const monLong = k => new Date(k + "-15T12:00:00Z").toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+const PERIODS = {
+  day:   { label: "Tage", note: "letzte 30 Tage", key: k => k,
+           list: t => Array.from({ length: 30 }, (_, i) => addDays(t, i - 29)),
+           short: ddmm, long: fmtDate },
+  week:  { label: "Wochen", note: "letzte 12 Wochen", key: monday,
+           list: t => Array.from({ length: 12 }, (_, i) => addDays(monday(t), (i - 11) * 7)),
+           short: k => "KW " + isoWeek(k)[1], long: k => `KW ${isoWeek(k)[1]} / ${isoWeek(k)[0]} · ${ddmm(k)} – ${ddmm(addDays(k, 6))}` },
+  month: { label: "Monate", note: "letzte 12 Monate", key: k => k.slice(0, 7),
+           list: t => Array.from({ length: 12 }, (_, i) => { const d = new Date(t.slice(0, 7) + "-15T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + i - 11); return d.toISOString().slice(0, 7); }),
+           short: k => new Date(k + "-15T12:00:00Z").toLocaleDateString("de-DE", { month: "short", year: "2-digit" }), long: monLong },
+  year:  { label: "Jahre", note: "alle Jahre seit Messbeginn", key: k => k.slice(0, 4),
+           list: (t, first) => { const out = []; for (let y = +(first || t).slice(0, 4); y <= +t.slice(0, 4); y++) out.push(String(y)); return out; },
+           short: k => k, long: k => "Jahr " + k },
+};
+let period = "day";
+$("yieldTabs").innerHTML = Object.entries(PERIODS).map(([k, p]) => `<button role="tab" data-k="${k}" aria-selected="${k === period}">${p.label}</button>`).join("");
+$("yieldTabs").onclick = e => { const k = e.target.dataset?.k; if (!k) return; period = k;
+  [...$("yieldTabs").children].forEach(b => b.setAttribute("aria-selected", b.dataset.k === k)); drawYield(); };
+
+function sumBy(keyFn) {
+  const out = {};
+  for (const [k, d] of Object.entries(summary.days || {})) out[keyFn(k)] = (out[keyFn(k)] || 0) + d.kwh;
+  return out;
+}
+
+function drawYield() {
+  const p = PERIODS[period], today = dateKey(now());
+  const first = Object.keys(summary.days || {}).sort()[0];
+  const sums = sumBy(p.key), keys = p.list(today, first);
+  charts.yieldChart?.destroy(); delete charts.yieldChart;
+  bars("yieldChart", keys.map(p.short), keys.map(k => sums[k] ?? 0), i => p.long(keys[i]));
+  const vals = keys.map(k => sums[k]).filter(v => v != null);
+  const total = vals.reduce((a, b) => a + b, 0);
+  $("yieldNote").textContent = `${p.note} · zusammen ${nf(total, 1)} kWh` + (vals.length > 1 && period !== "year" ? ` · Ø ${nf(total / vals.length, 2)} kWh` : "");
+}
+
+function drawPeriods() {
+  const today = dateKey(now()), days = summary.days || {};
+  const sum = pred => Object.entries(days).filter(([k]) => pred(k)).reduce((s, [, d]) => s + d.kwh, 0);
+  const prevMonth = (() => { const d = new Date(today.slice(0, 7) + "-15T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
+  const wk = monday(today), lastWk = addDays(wk, -7);
+  const items = [
+    ["Diese Woche", sum(k => monday(k) === wk), `KW ${isoWeek(today)[1]} · Vorwoche ${nf(sum(k => monday(k) === lastWk), 1)} kWh`],
+    ["Dieser Monat", sum(k => k.startsWith(today.slice(0, 7))), `Vormonat ${nf(sum(k => k.startsWith(prevMonth)), 1)} kWh`],
+    ["Dieses Jahr", sum(k => k.startsWith(today.slice(0, 4))), `seit Messbeginn ${today.slice(0, 4)}`],
+    ["Gesamt", summary.total_kwh, "Zähler des Wechselrichters"],
+  ];
+  $("periods").innerHTML = items.map(([l, v, h]) => `<div><div class="l">${l}</div><div class="v">${nf(v, 1)}<small>kWh</small></div><div class="h">${h}</div></div>`).join("");
+}
+
+// ---------- Verbindung ----------
+// Stufen: [Grenze, Text, Klasse, Balken]; Signal in dBm (hoeher = besser), Zeiten in ms (niedriger = besser)
+const SIG = [[-60, "sehr gut", "good", 4], [-67, "gut", "good", 3], [-75, "mäßig", "warn", 2], [-85, "schwach", "bad", 1], [-999, "kritisch", "bad", 0]];
+const LAT = [[150, "sehr gut", "good", 4], [400, "gut", "good", 3], [1500, "langsam", "warn", 2], [4000, "sehr langsam", "bad", 1], [1e9, "kritisch", "bad", 0]];
+const UP  = [[1500, "sehr gut", "good", 4], [3000, "gut", "good", 3], [6000, "langsam", "warn", 2], [12000, "sehr langsam", "bad", 1], [1e9, "kritisch", "bad", 0]];
+const LOSS = [[1, "keine Ausfälle", "good", 4], [5, "selten", "good", 3], [15, "häufig", "warn", 2], [101, "sehr häufig", "bad", 1]];
+const grade = (v, steps, higherBetter) => steps.find(([g]) => higherBetter ? v >= g : v < g);
+const qual = (v, steps, higherBetter, hint) => {
+  if (v == null) return `<span class="q"><span class="h">${hint || "noch kein Wert"}</span></span>`;
+  const [, txt, cls, n] = grade(v, steps, higherBetter);
+  return `<span class="q ${cls}"><span class="bars" aria-hidden="true">${[1, 2, 3, 4].map(i => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</span>${txt}</span>`;
+};
+const tile = (label, v, unit, d, q) => `<div><div class="l">${label}</div><div class="v">${v == null ? "–" : nf(v, d)}${v == null ? "" : `<small>${unit}</small>`}</div>${q}</div>`;
+
+function drawConn() {
+  const l = summary?.latest || {}, net = summary?.net, today = dateKey(now()), d = summary?.days?.[today];
+  const fresh = l.ts && now() - l.ts < 30 * 60;
+  const loss = d && d.lost != null ? d.lost / (d.samples + d.lost) * 100 : null;
+  const upAvg = d?.up_n ? d.up_ms_sum / d.up_n : null;
+  $("conn").innerHTML = [
+    tile("WLAN ESP32 → Router", l.rssi, "dBm", 0, qual(l.rssi ?? null, SIG, true)),
+    tile("Funk WR-Stick am ESP32", l.ap, "dBm", 0, qual(l.ap ?? null, SIG, true, l.rssi != null ? "Hotspot nicht gefunden" : null)),
+    tile("Antwortzeit WR-Stick", l.lat, "ms", 0, qual(l.lat ?? null, LAT, false)),
+    tile("Upload zu GitHub", net?.up_ms ? net.up_ms / 1000 : null, "s", 1, qual(net?.up_ms || null, UP, false)),
+    tile("Verlorene Abfragen heute", loss, "%", 1, qual(loss, LOSS, false, "noch keine Daten")),
+  ].join("");
+  const parts = [];
+  if (l.ts && l.rssi != null) parts.push(fresh ? `Stand ${hhmm(l.ts)} Uhr` : `letzter Stand ${fmtDate(dateKey(l.ts))}, ${hhmm(l.ts)} Uhr`);
+  if (upAvg) parts.push(`Upload heute Ø ${nf(upAvg / 1000, 1)} s, max. ${nf(d.up_ms_max / 1000, 1)} s`);
+  $("connNote").textContent = parts.join(" · ") || "Funk und Internet des ESP32 (ab der neuen Firmware)";
+}
+
+const CONN_TABS = {
+  sig: { label: "Signalstärke", unit: "dBm", d: 0, series: [["WLAN ESP32 → Router", "--series-1", r => r.rssi], ["Funk WR-Stick am ESP32", "--series-2", r => r.ap]] },
+  lat: { label: "Antwortzeit WR-Stick", unit: "ms", d: 0, series: [["Antwortzeit", "--series-1", r => r.lat]] },
+};
+let connTab = "sig";
+$("connTabs").innerHTML = Object.entries(CONN_TABS).map(([k, t]) => `<button role="tab" data-k="${k}" aria-selected="${k === connTab}">${t.label}</button>`).join("");
+$("connTabs").onclick = e => { const k = e.target.dataset?.k; if (!k) return; connTab = k;
+  [...$("connTabs").children].forEach(b => b.setAttribute("aria-selected", b.dataset.k === k)); drawConnChart(); };
+
+function drawConnChart() {
+  const t = CONN_TABS[connTab];
+  const rows = dayRows.filter(r => t.series.some(([, , f]) => isFinite(f(r)) && f(r) !== 0));
+  setEmpty("connChart", !rows.length);
+  $("connLegend").innerHTML = t.series.length > 1 ? t.series.map(([n, c]) => `<span style="--c: var(${c})">${n}</span>`).join("") : "";
+  const pts = [];
+  rows.forEach((r, i) => { if (i && r.ts - rows[i - 1].ts > 300) pts.push({ gap: true, ts: r.ts - 1 }); pts.push(r); });
+  const opt = baseOptions(t.unit);
+  opt.scales.y.beginAtZero = connTab === "lat";
+  if (connTab === "sig") { opt.scales.y.suggestedMin = -90; opt.scales.y.suggestedMax = -30; }
+  opt.scales.x.type = "linear";
+  opt.scales.x.ticks.callback = v => hhmm(v);
+  opt.scales.x.ticks.stepSize = 3600;
+  if (rows.length) { opt.scales.x.min = Math.floor(rows[0].ts / 3600) * 3600; opt.scales.x.max = Math.ceil(rows.at(-1).ts / 3600) * 3600; }
+  opt.plugins.tooltip.callbacks = { title: it => hhmm(it[0].parsed.x) + " Uhr", label: it => ` ${it.dataset.label}: ${nf(it.parsed.y, t.d)} ${t.unit}` };
+  const ds = t.series.map(([label, c, f]) => ({
+    label, data: pts.map(r => { const v = r.gap ? null : f(r); return { x: r.ts, y: isFinite(v) && v !== 0 ? v : null }; }),
+    borderColor: css(c), backgroundColor: css(c), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+    pointHoverBorderWidth: 2, pointHoverBorderColor: css("--surface-1"), tension: .25, spanGaps: false }));
+  charts.connChart?.destroy(); delete charts.connChart;
+  draw("connChart", { type: "line", data: { datasets: ds }, options: opt });
+}
+
 function drawAggregates() {
   const days = summary.days || {};
   const today = dateKey(now());
-  const last30 = [];
-  for (let k = 29; k >= 0; k--) last30.push(dateKey(now() - k * 86400));
-  bars("daysChart", last30.map(k => k.slice(8) + "." + k.slice(5, 7) + "."), last30.map(k => days[k]?.kwh ?? 0), i => fmtDate(last30[i]));
-
-  const months = {};
-  for (const [k, d] of Object.entries(days)) months[k.slice(0, 7)] = (months[k.slice(0, 7)] || 0) + d.kwh;
-  const mk = Object.keys(months).sort().slice(-12);
-  bars("monthChart", mk.map(k => new Date(k + "-15").toLocaleDateString("de-DE", { month: "short", year: "2-digit" })),
-       mk.map(k => months[k]), i => new Date(mk[i] + "-15").toLocaleDateString("de-DE", { month: "long", year: "numeric" }));
+  drawYield();
+  drawPeriods();
+  drawConn();
 
   const year = today.slice(0, 4);
   countTo("kYear", Object.entries(days).filter(([k]) => k.startsWith(year)).reduce((s, [, d]) => s + d.kwh, 0), 1);
@@ -552,7 +703,7 @@ const shift = n => { const d = new Date(dayKey + "T12:00:00"); d.setDate(d.getDa
 $("prev").onclick = () => shift(-1);
 $("next").onclick = () => shift(1);
 $("dayPick").onchange = e => e.target.value && loadDay(e.target.value);
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { Object.values(charts).forEach(c => c.destroy()); for (const k in charts) delete charts[k]; drawAggregates(); drawDay(false); drawKennlinien(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { Object.values(charts).forEach(c => c.destroy()); for (const k in charts) delete charts[k]; drawAggregates(); drawDay(false); drawKennlinien(); drawConnChart(); });
 refresh();
 setInterval(refresh, 2 * 60 * 1000);
 setInterval(drawStatus, 30 * 1000);

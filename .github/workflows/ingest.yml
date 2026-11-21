@@ -1,13 +1,13 @@
 name: Messwerte einsammeln
 
-# Der ESP32 schickt alle 10 min ein repository_dispatch mit den Messzeilen.
+# Der ESP32 schickt alle 10 min ein repository_dispatch mit den Messzeilen und Verbindungswerten.
 on:
   repository_dispatch:
     types: [solar-data]
   workflow_dispatch:
     inputs:
       rows:
-        description: "Testzeilen (ts,p,u,i,f,t,u1,i1,u2,i2,e_day,e_total; getrennt durch ;)"
+        description: "Testzeilen (ts,p,u,i,f,t,u1,i1,u2,i2,e_day,e_total[,rssi,ap,lat]; getrennt durch ;)"
         required: true
 
 permissions:
@@ -28,6 +28,7 @@ jobs:
         env:
           # Nie direkt ins Skript interpolieren (Injection) – nur per Umgebungsvariable
           ROWS: ${{ github.event.client_payload.rows || inputs.rows }}
+          NET: ${{ github.event.client_payload.net }}
         run: python3 tools/ingest.py
 
       - name: Commit

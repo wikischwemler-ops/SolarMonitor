@@ -7,6 +7,8 @@
 // WLAN-Stick des Wechselrichters (feste IP im Router vergeben!)
 #define LOGGER_IP     "192.168.0.155"
 #define LOGGER_SN     0UL            // "WIFI-Nummer" vom Typenschild, z. B. 41xxxxxxxxUL
+// Optional: Name des Hotspots, den der Stick aussendet (Standard: "AP_" + LOGGER_SN)
+// #define LOGGER_AP  "AP_41xxxxxxxx"
 
 // Fine-grained Personal Access Token, NUR fuer das Repo SolarMonitor,
 // Berechtigung "Contents: Read and write". Laufzeit z. B. 1 Jahr.
