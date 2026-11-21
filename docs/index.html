@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SolarMonitor</title>
+<meta name="description" content="Live-Ertrag, Verläufe und Kennlinien des Balkonkraftwerks (Bosswerk BW-MI600, 2 × 410 Wp)">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='7' fill='%23eda100'/><g stroke='%23eda100' stroke-width='3' stroke-linecap='round'><path d='M16 2v4M16 26v4M2 16h4M26 16h4M6 6l3 3M23 23l3 3M6 26l3-3M23 9l3-3'/></g></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f4f2; --surface-1: #fcfcfb; --border: #e3e2de; --grid: #ebeae6;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77766f;
+    --series-1: #2a78d6;  /* AC / Ertrag */
+    --series-2: #eb6834;  /* PV1 */
+    --series-3: #1baf7a;  /* PV2 */
+    --sun: #eda100; --track: #e9e8e3;
+    --good: #0f7b3c; --warn: #a35f00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #121211; --surface-1: #1a1a19; --border: #2d2d2b; --grid: #262624;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+      --sun: #f2b52e; --track: #2a2a28; --good: #3fbf6f; --warn: #e0a030;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --border: #2d2d2b; --grid: #262624;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --sun: #f2b52e; --track: #2a2a28; --good: #3fbf6f; --warn: #e0a030;
+  }
+  :root { --radius: 16px; --shadow: 0 1px 2px rgb(0 0 0 / .04), 0 10px 30px -14px rgb(0 0 0 / .14); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --shadow: 0 1px 0 rgb(255 255 255 / .03) inset; } }
+  :root[data-theme="dark"] { --shadow: 0 1px 0 rgb(255 255 255 / .03) inset; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; color: var(--text-primary); min-height: 100vh;
+         background: radial-gradient(1200px 500px at 15% -10%, color-mix(in srgb, var(--sun) 14%, transparent), transparent 70%), var(--bg);
+         font: 15px/1.45 "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-feature-settings: "tnum" 1, "cv11" 1; }
+  main { max-width: 1120px; margin: 0 auto; padding: 8px 24px 48px; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+           margin: 0 -24px 16px; padding: 14px 24px; backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+           background: color-mix(in srgb, var(--bg) 72%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  .logo { width: 30px; height: 30px; flex: none; }
+  h1 { font-size: 21px; margin: 0; letter-spacing: -.02em; font-weight: 700; }
+  .sub { color: var(--text-secondary); font-size: 13px; }
+  .status { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-secondary);
+            background: var(--surface-1); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); }
+  .status.on .dot { background: var(--good); animation: pulse 2s ease-in-out infinite; }
+  .status.off .dot { background: var(--warn); }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 50%, transparent); }
+                     50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--good) 0%, transparent); } }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); min-width: 0; }
+  .card h2 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+  .card-head .note { color: var(--text-muted); font-size: 13px; }
+
+  /* ---- Live ---- */
+  .live { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 24px; align-items: center; margin-bottom: 16px;
+          background: linear-gradient(135deg, color-mix(in srgb, var(--sun) 9%, var(--surface-1)), var(--surface-1) 55%); }
+  .gauge { position: relative; width: 100%; max-width: 260px; margin: 0 auto; }
+  .gauge svg { display: block; width: 100%; }
+  .gauge .arc { transition: stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1); }
+  .gauge .center { position: absolute; left: 0; right: 0; top: 46%; text-align: center; }
+  .gauge .val { font-size: 40px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1; }
+  .gauge .unit { font-size: 15px; color: var(--text-secondary); margin-left: 2px; }
+  .gauge .cap { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .flow svg { display: block; width: 100%; height: auto; }
+  .flow .flow-narrow { display: none; max-width: 340px; margin: 0 auto; }
+  .flow .wire { fill: none; stroke: var(--track); stroke-width: 6; stroke-linecap: round; }
+  .flow .ener { fill: none; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 2 14;
+                animation: run var(--dur, 3s) linear infinite; }
+  .flow.idle .ener { animation-play-state: paused; opacity: .25; }
+  @keyframes run { to { stroke-dashoffset: -64; } }
+  .flow .lbl { font-size: 12px; fill: var(--text-secondary); }
+  .flow .num { font-size: 14px; font-weight: 600; fill: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .flow .box { fill: var(--bg); stroke: var(--border); }
+  .sun-rays { transform-origin: 40px 40px; animation: spin 24s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .flow.idle .sun-rays { animation-play-state: paused; }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .kpi .label { font-size: 13px; color: var(--text-secondary); }
+  .kpi { position: relative; overflow: hidden; }
+  .kpi::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--sun); opacity: .85; }
+  .kpi .value { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 4px; white-space: nowrap; }
+  .kpi .value small { font-size: 15px; font-weight: 500; color: var(--text-secondary); margin-left: 3px; }
+  .kpi .hint { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .nav { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .nav button, .nav input {
+    font: inherit; font-size: 13px; color: var(--text-primary); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; padding: 4px 12px; min-height: 36px; cursor: pointer; transition: background .2s; }
+  .nav button:hover:not(:disabled) { background: var(--grid); }
+  .nav button:disabled { opacity: .4; cursor: default; }
+  .tabs { display: flex; gap: 2px; margin-bottom: 14px; padding: 3px; background: var(--bg); border: 1px solid var(--border);
+          border-radius: 12px; overflow-x: auto; scrollbar-width: none; width: fit-content; max-width: 100%; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { font: inherit; font-size: 13px; color: var(--text-secondary); background: transparent; border: 0; border-radius: 9px;
+                 padding: 6px 12px; min-height: 32px; cursor: pointer; white-space: nowrap; transition: background .25s, color .25s; }
+  .tabs button:hover { color: var(--text-primary); }
+  .tabs button[aria-selected="true"] { background: var(--surface-1); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; min-height: 19px; }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 3px; border-radius: 2px;
+                         background: var(--c); vertical-align: middle; margin-right: 6px; }
+  .legend.dots span::before { width: 8px; height: 8px; border-radius: 50%; }
+  .chart { position: relative; height: 280px; }
+  .chart.small { height: 230px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid3 h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+  .grid3 p { font-size: 12px; color: var(--text-muted); margin: 0 0 8px; }
+  .empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--text-muted); font-size: 14px; text-align: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  td { padding: 7px 0; border-bottom: 1px solid var(--grid); }
+  td:last-child { text-align: right; }
+  td:first-child { color: var(--text-secondary); }
+  tr:last-child td { border-bottom: 0; }
+  footer { margin-top: 20px; font-size: 12px; color: var(--text-muted); }
+  .fade-in { animation: fade .7s cubic-bezier(.2,.8,.2,1) both; }
+  .kpis .fade-in:nth-child(2) { animation-delay: .06s; } .kpis .fade-in:nth-child(3) { animation-delay: .12s; } .kpis .fade-in:nth-child(4) { animation-delay: .18s; }
+  @keyframes fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  /* Tablet */
+  @media (max-width: 960px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .grid3 { grid-template-columns: 1fr 1fr; }
+    .grid3 > :last-child { grid-column: 1 / -1; }
+  }
+  /* Handy */
+  @media (max-width: 640px) {
+    main { padding: 0 16px 32px; }
+    header { margin: 0 -16px 12px; padding: 10px 16px; }
+    .sub { display: none; }
+    .card { padding: 16px; border-radius: 14px; }
+    .live { grid-template-columns: 1fr; gap: 8px; }
+    .flow .flow-wide { display: none; } .flow .flow-narrow { display: block; }
+    .flow .flow-narrow .lbl { font-size: 13px; } .flow .flow-narrow .num { font-size: 17px; }
+    .gauge { max-width: 210px; }
+    .kpis { gap: 10px; }
+    .kpi .value { font-size: 22px; }
+    .kpi .label { font-size: 12px; }
+    .grid2, .grid3 { grid-template-columns: 1fr; gap: 12px; }
+    .grid3 > :last-child { grid-column: auto; }
+    .chart { height: 230px; }
+    .chart.small { height: 210px; }
+    .nav { margin-left: 0; width: 100%; }
+    .nav input { flex: 1; }
+    .card-head .note { width: 100%; order: 3; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--sun)"/><circle cx="16" cy="16" r="5.5" fill="#fff"/><g stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M16 4.5v3M16 24.5v3M4.5 16h3M24.5 16h3M8 8l2 2M22 22l2 2M8 24l2-2M22 10l2-2"/></g></svg>
+    <h1>SolarMonitor</h1>
+    <span class="sub">Bosswerk BW-MI600 · 2 × 410 Wp</span>
+    <span class="status" id="status"><span class="dot"></span><span id="statusText">lade …</span></span>
+  </header>
+
+  <!-- Live -->
+  <section class="card live fade-in">
+    <div class="gauge" aria-label="Aktuelle Einspeiseleistung">
+      <svg viewBox="0 0 200 150">
+        <path d="M25 125 A85 85 0 1 1 175 125" fill="none" stroke="var(--track)" stroke-width="14" stroke-linecap="round"/>
+        <path id="gArc" class="arc" d="M25 125 A85 85 0 1 1 175 125" fill="none" stroke="var(--series-1)" stroke-width="14" stroke-linecap="round"/>
+        <text x="25" y="146" font-size="10" fill="var(--text-muted)" text-anchor="middle">0</text>
+        <text x="175" y="146" font-size="10" fill="var(--text-muted)" text-anchor="middle">600 W</text>
+      </svg>
+      <div class="center"><span class="val" id="gVal">–</span><span class="unit">W</span><div class="cap" id="gCap">Einspeisung jetzt</div></div>
+    </div>
+    <div class="flow idle" id="flow" aria-label="Energiefluss von den Modulen über den Wechselrichter ins Hausnetz">
+      <!-- breit: Desktop/Tablet -->
+      <svg class="flow-wide" viewBox="0 0 560 190">
+        <g transform="translate(14,4)">
+          <g class="sun-rays" stroke="var(--sun)" stroke-width="3" stroke-linecap="round">
+            <path d="M40 6v8M40 66v8M6 40h8M66 40h8M16 16l6 6M58 58l6 6M16 64l6-6M58 22l6-6"/>
+          </g>
+          <circle class="sunCore" cx="40" cy="40" r="15" fill="var(--sun)"/>
+        </g>
+        <g transform="translate(110,14)"><rect class="box" width="110" height="62" rx="10"/>
+          <text class="lbl" x="12" y="22">Modul 1</text><text class="num fPv1" x="12" y="45">– W</text></g>
+        <g transform="translate(110,110)"><rect class="box" width="110" height="62" rx="10"/>
+          <text class="lbl" x="12" y="22">Modul 2</text><text class="num fPv2" x="12" y="45">– W</text></g>
+        <g transform="translate(290,62)"><rect class="box" width="110" height="62" rx="10"/>
+          <text class="lbl" x="12" y="22">Wechselrichter</text><text class="num fEta" x="12" y="45">η –</text></g>
+        <g transform="translate(450,62)"><rect class="box" width="96" height="62" rx="10"/>
+          <text class="lbl" x="12" y="22">Hausnetz</text><text class="num fAc" x="12" y="45">– W</text></g>
+        <path class="wire" d="M220 45 C255 45 255 80 290 80"/>
+        <path class="wire" d="M220 141 C255 141 255 106 290 106"/>
+        <path class="wire" d="M400 93 H450"/>
+        <path class="ener e1" stroke="var(--series-2)" d="M220 45 C255 45 255 80 290 80"/>
+        <path class="ener e2" stroke="var(--series-3)" d="M220 141 C255 141 255 106 290 106"/>
+        <path class="ener e3" stroke="var(--series-1)" d="M400 93 H450"/>
+      </svg>
+      <!-- schmal: Handy -->
+      <svg class="flow-narrow" viewBox="0 0 340 232">
+        <g transform="translate(0,0)"><rect class="box" width="140" height="58" rx="12"/>
+          <text class="lbl" x="14" y="23">Modul 1</text><text class="num fPv1" x="14" y="45">– W</text></g>
+        <g transform="translate(200,0)"><rect class="box" width="140" height="58" rx="12"/>
+          <text class="lbl" x="14" y="23">Modul 2</text><text class="num fPv2" x="14" y="45">– W</text></g>
+        <g transform="translate(95,88)"><rect class="box" width="150" height="58" rx="12"/>
+          <text class="lbl" x="14" y="23">Wechselrichter</text><text class="num fEta" x="14" y="45">η –</text></g>
+        <g transform="translate(95,174)"><rect class="box" width="150" height="58" rx="12"/>
+          <text class="lbl" x="14" y="23">Hausnetz</text><text class="num fAc" x="14" y="45">– W</text></g>
+        <path class="wire" d="M70 58 C70 78 130 70 130 88"/>
+        <path class="wire" d="M270 58 C270 78 210 70 210 88"/>
+        <path class="wire" d="M170 146 V174"/>
+        <path class="ener e1" stroke="var(--series-2)" d="M70 58 C70 78 130 70 130 88"/>
+        <path class="ener e2" stroke="var(--series-3)" d="M270 58 C270 78 210 70 210 88"/>
+        <path class="ener e3" stroke="var(--series-1)" d="M170 146 V174"/>
+      </svg>
+    </div>
+  </section>
+
+  <section class="kpis">
+    <div class="card kpi fade-in"><div class="label">Ertrag heute</div><div class="value"><span id="kToday">–</span><small>kWh</small></div><div class="hint" id="kTodayHint">&nbsp;</div></div>
+    <div class="card kpi fade-in"><div class="label">Ertrag dieses Jahr</div><div class="value"><span id="kYear">–</span><small>kWh</small></div><div class="hint" id="kYearHint">&nbsp;</div></div>
+    <div class="card kpi fade-in"><div class="label">Ertrag gesamt</div><div class="value"><span id="kTotal">–</span><small>kWh</small></div><div class="hint">seit Inbetriebnahme</div></div>
+    <div class="card kpi fade-in"><div class="label">Temperatur WR</div><div class="value"><span id="kTemp">–</span><small>°C</small></div><div class="hint" id="kTempHint">&nbsp;</div></div>
+  </section>
+
+  <!-- Verlauf -->
+  <section class="card fade-in">
+    <div class="card-head">
+      <h2>Tagesverlauf</h2>
+      <span class="note" id="dayNote"></span>
+      <div class="nav">
+        <button id="prev" aria-label="Vorheriger Tag">‹</button>
+        <input type="date" id="dayPick" aria-label="Tag wählen">
+        <button id="next" aria-label="Nächster Tag">›</button>
+      </div>
+    </div>
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div class="legend" id="dayLegend"></div>
+    <div class="chart"><canvas id="dayChart"></canvas><div class="empty" id="dayEmpty">Keine Messwerte für diesen Tag</div></div>
+  </section>
+
+  <!-- Kennlinien -->
+  <section class="card fade-in" style="margin-top:16px">
+    <div class="card-head"><h2>Kennlinien</h2><span class="note" id="kennNote">Messpunkte des gewählten Tages</span></div>
+    <div class="legend dots">
+      <span style="--c: var(--series-2)">Modul 1 (PV1)</span>
+      <span style="--c: var(--series-3)">Modul 2 (PV2)</span>
+    </div>
+    <div class="grid3">
+      <div><h3>P-U-Kennlinie</h3><p>Leistung über Modulspannung: wo der MPP-Tracker arbeitet</p>
+        <div class="chart small"><canvas id="puChart"></canvas><div class="empty">Keine Messwerte</div></div></div>
+      <div><h3>U-I-Kennlinie</h3><p>Modulstrom über Modulspannung</p>
+        <div class="chart small"><canvas id="uiChart"></canvas><div class="empty">Keine Messwerte</div></div></div>
+      <div><h3>Wirkungsgrad</h3><p>AC-Leistung ÷ DC-Leistung über DC-Leistung (ab 30 W)</p>
+        <div class="chart small"><canvas id="etaChart"></canvas><div class="empty">Keine Messwerte</div></div></div>
+    </div>
+  </section>
+
+  <div class="grid2">
+    <section class="card fade-in">
+      <div class="card-head"><h2>Tageserträge</h2><span class="note">letzte 30 Tage, kWh</span></div>
+      <div class="chart"><canvas id="daysChart"></canvas></div>
+    </section>
+    <section class="card fade-in">
+      <div class="card-head"><h2>Monatserträge</h2><span class="note">kWh</span></div>
+      <div class="chart"><canvas id="monthChart"></canvas></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card fade-in">
+      <div class="card-head"><h2>Letzte Messung</h2><span class="note" id="lastNote"></span></div>
+      <table id="latestTable"></table>
+    </section>
+    <section class="card fade-in">
+      <div class="card-head"><h2>Bestwerte</h2></div>
+      <table id="bestTable"></table>
+    </section>
+  </div>
+
+  <footer id="footer">Der ESP32 liest den Wechselrichter jede Minute lokal aus und lädt alle 10 Minuten hoch. Nachts ruht der Wechselrichter.</footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const TZ = "Europe/Berlin", MAX_W = 600;
+const $ = id => document.getElementById(id);
+const nf = (v, d = 1) => v == null || !isFinite(v) ? "–" : v.toLocaleString("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
+const dateKey = ts => new Date(ts * 1000).toLocaleDateString("sv-SE", { timeZone: TZ });
+const hhmm = ts => new Date(ts * 1000).toLocaleTimeString("de-DE", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+const fmtDate = k => new Date(k + "T12:00:00").toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const bust = () => "?t=" + Date.now();
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const now = () => Date.now() / 1000;
+
+let summary = null, dayKey = null, dayRows = [], tab = "power";
+const charts = {};
+
+// ---------- Animierte Zahlen ----------
+const shown = {};
+function countTo(id, to, d = 1, ms = 1100) {
+  const el = $(id);
+  if (to == null || !isFinite(to)) { el.textContent = "–"; shown[id] = null; return; }
+  const from = shown[id] ?? 0;
+  shown[id] = to;
+  if (reduced) { el.textContent = nf(to, d); return; }
+  const t0 = performance.now();
+  const step = t => {
+    const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = nf(from + (to - from) * e, d);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// ---------- Chart-Basis ----------
+function baseOptions(yTitle, xTitle) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    animation: reduced ? false : { duration: 900, easing: "easeOutQuart" },
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: { backgroundColor: css("--surface-1"), titleColor: css("--text-primary"), bodyColor: css("--text-secondary"),
+                 borderColor: css("--border"), borderWidth: 1, padding: 10, boxPadding: 4, usePointStyle: true },
+    },
+    scales: {
+      x: { grid: { display: false }, border: { color: css("--border") }, ticks: { color: css("--text-muted"), maxRotation: 0, autoSkipPadding: 12 },
+           title: { display: !!xTitle, text: xTitle, color: css("--text-muted") } },
+      y: { beginAtZero: true, grid: { color: css("--grid") }, border: { display: false },
+           ticks: { color: css("--text-muted") }, title: { display: true, text: yTitle, color: css("--text-muted") } },
+    },
+  };
+}
+function draw(id, cfg) {
+  const c = charts[id];
+  if (c && c.config.type === cfg.type) {          // sanft ueberblenden statt neu zeichnen
+    c.data = cfg.data; c.options = cfg.options; c.update(); return;
+  }
+  c?.destroy();
+  charts[id] = new Chart($(id), cfg);
+}
+const setEmpty = (canvasId, empty) => { $(canvasId).parentElement.querySelector(".empty").style.display = empty ? "flex" : "none"; };
+
+// ---------- Live ----------
+function drawLive() {
+  const l = summary?.latest;
+  const online = l && now() - l.ts < 30 * 60;
+  const p = online ? l.p : 0, pv1 = online ? l.u1 * l.i1 : 0, pv2 = online ? l.u2 * l.i2 : 0;
+  const arc = $("gArc"), len = arc.getTotalLength();
+  arc.style.strokeDasharray = len;
+  arc.style.strokeDashoffset = len * (1 - Math.min(1, p / MAX_W));
+  countTo("gVal", online ? p : null, 0);
+  $("gCap").textContent = online ? `${nf(p / MAX_W * 100, 0)} % der Nennleistung` : "Wechselrichter ruht";
+  const setT = (c, v) => document.querySelectorAll("." + c).forEach(e => e.textContent = v);
+  setT("fPv1", online ? `${nf(pv1, 0)} W` : "– W");
+  setT("fPv2", online ? `${nf(pv2, 0)} W` : "– W");
+  setT("fAc", online ? `${nf(p, 0)} W` : "– W");
+  const dc = pv1 + pv2;
+  setT("fEta", online && dc > 20 ? `η ${nf(Math.min(100, p / dc * 100), 0)} %` : "η –");
+  // Geschwindigkeit der Energie-Punkte ~ Leistung
+  const dur = w => `${Math.max(.5, Math.min(6, 60 / Math.max(w, 1)))}s`;
+  const setE = (c, w, dim) => document.querySelectorAll("." + c).forEach(e => { e.style.setProperty("--dur", dur(w)); e.style.opacity = dim && w <= 1 ? .2 : 1; });
+  setE("e1", pv1, true); setE("e2", pv2, true); setE("e3", p, false);
+  $("flow").classList.toggle("idle", !online || p < 1);
+  document.querySelectorAll(".sunCore").forEach(e => e.style.opacity = online ? .45 + .55 * Math.min(1, p / 300) : .3);
+}
+
+function drawStatus() {
+  const l = summary?.latest;
+  if (!l) return;
+  const age = (now() - l.ts) / 60;
+  const online = age < 30;
+  $("status").className = "status " + (online ? "on" : "off");
+  const ago = age < 1 ? "gerade eben" : age < 90 ? `vor ${Math.round(age)} min` : (dateKey(l.ts) === dateKey(now()) ? `seit ${hhmm(l.ts)} Uhr` : `seit ${fmtDate(dateKey(l.ts))}`);
+  $("statusText").textContent = online ? `live · ${ago}` : `keine neuen Daten ${ago}`;
+}
+
+// ---------- Tagesverlauf ----------
+const TABS = {
+  power: { label: "Leistung", unit: "W", d: 0, series: [["Einspeisung (AC)", "--series-1", r => r.p], ["Modul 1 (PV1)", "--series-2", r => r.u1 * r.i1], ["Modul 2 (PV2)", "--series-3", r => r.u2 * r.i2]] },
+  pvu:   { label: "Modulspannung", unit: "V", d: 1, series: [["Modul 1 (PV1)", "--series-2", r => r.u1], ["Modul 2 (PV2)", "--series-3", r => r.u2]] },
+  pvi:   { label: "Modulstrom", unit: "A", d: 1, series: [["Modul 1 (PV1)", "--series-2", r => r.i1], ["Modul 2 (PV2)", "--series-3", r => r.i2]] },
+  grid:  { label: "Netzspannung", unit: "V", d: 1, zero: false, series: [["Netzspannung", "--series-1", r => r.u]] },
+  freq:  { label: "Netzfrequenz", unit: "Hz", d: 2, zero: false, series: [["Netzfrequenz", "--series-1", r => r.f]] },
+  temp:  { label: "Temperatur", unit: "°C", d: 1, zero: false, series: [["Temperatur Wechselrichter", "--series-1", r => r.t]] },
+  energy:{ label: "Ertrag", unit: "kWh", d: 2, fill: true, series: [["Ertrag heute", "--series-1", r => r.e_day]] },
+};
+$("tabs").innerHTML = Object.entries(TABS).map(([k, t]) => `<button role="tab" data-k="${k}" aria-selected="${k === tab}">${t.label}</button>`).join("");
+$("tabs").onclick = e => { const k = e.target.dataset?.k; if (!k) return; tab = k;
+  [...$("tabs").children].forEach(b => b.setAttribute("aria-selected", b.dataset.k === k)); drawDay(true); };
+
+async function loadDay(key) {
+  dayKey = key;
+  $("dayPick").value = key;
+  const keys = Object.keys(summary?.days || {});
+  $("prev").disabled = !keys.length || key <= keys[0];
+  $("next").disabled = key >= dateKey(now());
+  try {
+    const r = await fetch(`data/days/${key}.csv${bust()}`);
+    if (!r.ok) throw 0;
+    const lines = (await r.text()).trim().split("\n");
+    const head = lines.shift().split(",");
+    dayRows = lines.map(l => Object.fromEntries(l.split(",").map((v, i) => [head[i], +v])));
+  } catch { dayRows = []; }
+  drawDay(true);
+  drawKennlinien();
+}
+
+function drawDay(fresh) {
+  const t = TABS[tab];
+  setEmpty("dayChart", !dayRows.length);
+  const d = summary?.days?.[dayKey];
+  $("dayNote").textContent = d ? `${nf(d.kwh, 2)} kWh · Spitze ${nf(d.peak_w, 0)} W um ${hhmm(d.peak_ts)}` : "";
+  $("dayLegend").innerHTML = t.series.length > 1 ? t.series.map(([n, c]) => `<span style="--c: var(${c})">${n}</span>`).join("") : "";
+  const pts = [];
+  dayRows.forEach((r, i) => { if (i && r.ts - dayRows[i - 1].ts > 300) pts.push({ gap: true, ts: r.ts - 1 }); pts.push(r); });
+  const opt = baseOptions(t.unit);
+  opt.scales.y.beginAtZero = t.zero !== false;
+  opt.scales.x.type = "linear";
+  opt.scales.x.ticks.callback = v => hhmm(v);
+  opt.scales.x.ticks.stepSize = 3600;
+  if (dayRows.length) {
+    opt.scales.x.min = Math.floor(dayRows[0].ts / 3600) * 3600;
+    opt.scales.x.max = Math.ceil(dayRows.at(-1).ts / 3600) * 3600;
+  }
+  if (fresh && !reduced) {   // Linie von links nach rechts aufbauen
+    const n = Math.max(pts.length, 1), total = 1100;
+    opt.animation = { x: { type: "number", easing: "linear", duration: total / n, from: NaN,
+                           delay: c => c.type === "data" && !c.xStarted ? (c.xStarted = true, c.index * total / n) : 0 },
+                      y: { type: "number", easing: "linear", duration: total / n,
+                           from: c => c.index === 0 ? c.chart.scales.y.getPixelForValue(0) : c.chart.getDatasetMeta(c.datasetIndex).data[c.index - 1]?.getProps(["y"], true).y,
+                           delay: c => c.type === "data" && !c.yStarted ? (c.yStarted = true, c.index * total / n) : 0 } };
+  }
+  opt.plugins.tooltip.callbacks = { title: it => hhmm(it[0].parsed.x) + " Uhr", label: it => ` ${it.dataset.label}: ${nf(it.parsed.y, t.d)} ${t.unit}` };
+  const ds = t.series.map(([label, c, f]) => ({
+    label, data: pts.map(r => ({ x: r.ts, y: r.gap ? null : f(r) })), borderColor: css(c), borderWidth: 2,
+    backgroundColor: t.fill ? css(c) + "26" : css(c), fill: !!t.fill,
+    pointRadius: 0, pointHoverRadius: 4, pointHoverBorderWidth: 2, pointHoverBorderColor: css("--surface-1"), tension: .25, spanGaps: false }));
+  charts.dayChart?.destroy(); delete charts.dayChart;
+  draw("dayChart", { type: "line", data: { datasets: ds }, options: opt });
+}
+
+// ---------- Kennlinien ----------
+function scatter(id, xTitle, yTitle, sets, xd, yd) {
+  const any = sets.some(s => s.data.length);
+  setEmpty(id, !any);
+  const opt = baseOptions(yTitle, xTitle);
+  opt.interaction = { mode: "nearest", intersect: true };
+  opt.scales.x.type = "linear";
+  opt.scales.x.grid = { color: css("--grid") };
+  if (yTitle === "%") { opt.scales.y.beginAtZero = false; opt.scales.y.suggestedMin = 80; opt.scales.y.max = 100; }
+  opt.plugins.tooltip.callbacks = { title: () => "", label: it => ` ${it.dataset.label}: ${nf(it.parsed.x, xd)} ${xTitle.split(" ").pop()} · ${nf(it.parsed.y, yd)} ${yTitle}  (${hhmm(it.raw.ts)})` };
+  if (!reduced) opt.animation = { duration: 700, delay: c => c.type === "data" ? c.index * 4 : 0 };
+  draw(id, { type: "scatter", data: { datasets: sets.map(s => ({
+    label: s.label, data: s.data, backgroundColor: css(s.c) + "b3", borderColor: css("--surface-1"), borderWidth: 1,
+    pointRadius: 3.5, pointHoverRadius: 6 })) }, options: opt });
+}
+
+function drawKennlinien() {
+  const lit = dayRows.filter(r => r.u1 * r.i1 + r.u2 * r.i2 > 0);
+  const pv = (u, i) => lit.filter(r => r[i] > 0).map(r => ({ x: r[u], y: r[u] * r[i], ts: r.ts }));
+  scatter("puChart", "Spannung V", "W", [
+    { label: "Modul 1", c: "--series-2", data: pv("u1", "i1") },
+    { label: "Modul 2", c: "--series-3", data: pv("u2", "i2") }], 1, 0);
+  scatter("uiChart", "Spannung V", "A", [
+    { label: "Modul 1", c: "--series-2", data: lit.filter(r => r.i1 > 0).map(r => ({ x: r.u1, y: r.i1, ts: r.ts })) },
+    { label: "Modul 2", c: "--series-3", data: lit.filter(r => r.i2 > 0).map(r => ({ x: r.u2, y: r.i2, ts: r.ts })) }], 1, 1);
+  const eta = dayRows.map(r => ({ dc: r.u1 * r.i1 + r.u2 * r.i2, r })).filter(o => o.dc >= 30)
+    .map(o => ({ x: o.dc, y: Math.min(100, o.r.p / o.dc * 100), ts: o.r.ts }));
+  scatter("etaChart", "DC-Leistung W", "%", [{ label: "Wirkungsgrad", c: "--series-1", data: eta }], 0, 1);
+  $("kennNote").textContent = `${lit.length} Messpunkte am ${fmtDate(dayKey)}`;
+}
+
+// ---------- Ertraege ----------
+function bars(id, labels, values, tipTitle) {
+  const opt = baseOptions("kWh");
+  opt.plugins.tooltip.callbacks = { title: it => tipTitle(it[0].dataIndex), label: it => ` Ertrag: ${nf(it.parsed.y, 2)} kWh` };
+  opt.plugins.tooltip.displayColors = false;
+  if (!reduced) opt.animation = { duration: 700, easing: "easeOutQuart", delay: c => c.type === "data" && c.mode === "default" ? c.dataIndex * 22 : 0 };
+  draw(id, { type: "bar", data: { labels, datasets: [{ data: values, backgroundColor: css("--series-1"),
+    borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: "start", maxBarThickness: 28, categoryPercentage: .85, barPercentage: .9 }] }, options: opt });
+}
+
+function drawAggregates() {
+  const days = summary.days || {};
+  const today = dateKey(now());
+  const last30 = [];
+  for (let k = 29; k >= 0; k--) last30.push(dateKey(now() - k * 86400));
+  bars("daysChart", last30.map(k => k.slice(8) + "." + k.slice(5, 7) + "."), last30.map(k => days[k]?.kwh ?? 0), i => fmtDate(last30[i]));
+
+  const months = {};
+  for (const [k, d] of Object.entries(days)) months[k.slice(0, 7)] = (months[k.slice(0, 7)] || 0) + d.kwh;
+  const mk = Object.keys(months).sort().slice(-12);
+  bars("monthChart", mk.map(k => new Date(k + "-15").toLocaleDateString("de-DE", { month: "short", year: "2-digit" })),
+       mk.map(k => months[k]), i => new Date(mk[i] + "-15").toLocaleDateString("de-DE", { month: "long", year: "numeric" }));
+
+  const year = today.slice(0, 4);
+  countTo("kYear", Object.entries(days).filter(([k]) => k.startsWith(year)).reduce((s, [, d]) => s + d.kwh, 0), 1);
+  $("kYearHint").textContent = `seit Messbeginn ${year}`;
+  const t = days[today];
+  countTo("kToday", t?.kwh ?? 0, 2);
+  $("kTodayHint").textContent = t ? `Spitze ${nf(t.peak_w, 0)} W um ${hhmm(t.peak_ts)}` : "noch keine Daten";
+  countTo("kTotal", summary.total_kwh, 1);
+  const l = summary.latest;
+  countTo("kTemp", l?.t, 1);
+  $("kTempHint").textContent = t ? `heute max. ${nf(t.t_max, 1)} °C` : " ";
+
+  const all = Object.entries(days);
+  const bestDay = all.reduce((b, e) => !b || e[1].kwh > b[1].kwh ? e : b, null);
+  const bestPeak = all.reduce((b, e) => !b || e[1].peak_w > b[1].peak_w ? e : b, null);
+  const avg = all.length ? all.reduce((s, [, d]) => s + d.kwh, 0) / all.length : null;
+  $("bestTable").innerHTML = [
+    ["Bester Tag", bestDay ? `${nf(bestDay[1].kwh, 2)} kWh · ${fmtDate(bestDay[0])}` : "–"],
+    ["Höchste Leistung", bestPeak ? `${nf(bestPeak[1].peak_w, 0)} W · ${fmtDate(bestPeak[0])}` : "–"],
+    ["Ø pro Tag", avg != null ? `${nf(avg, 2)} kWh` : "–"],
+    ["Messtage", all.length],
+  ].map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("");
+
+  if (l) {
+    $("lastNote").textContent = `${fmtDate(dateKey(l.ts))}, ${hhmm(l.ts)} Uhr`;
+    $("latestTable").innerHTML = [
+      ["Einspeisung", `${nf(l.p, 0)} W`],
+      ["Netz", `${nf(l.u, 1)} V · ${nf(l.i, 1)} A · ${nf(l.f, 2)} Hz`],
+      ["Modul 1 (PV1)", `${nf(l.u1, 1)} V · ${nf(l.i1, 1)} A · ${nf(l.u1 * l.i1, 0)} W`],
+      ["Modul 2 (PV2)", `${nf(l.u2, 1)} V · ${nf(l.i2, 1)} A · ${nf(l.u2 * l.i2, 0)} W`],
+      ["Temperatur", `${nf(l.t, 1)} °C`],
+    ].map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("");
+  }
+}
+
+async function refresh() {
+  try { summary = await (await fetch("data/summary.json" + bust())).json(); }
+  catch { summary = { days: {} }; $("statusText").textContent = "noch keine Daten"; }
+  drawStatus(); drawLive(); drawAggregates();
+  await loadDay(dayKey || dateKey(now()));
+  if (summary.updated) $("footer").textContent = `Zuletzt hochgeladen: ${fmtDate(dateKey(summary.updated))}, ${hhmm(summary.updated)} Uhr. Der ESP32 liest jede Minute lokal aus und lädt alle 10 Minuten hoch. Nachts ruht der Wechselrichter.`;
+}
+
+const shift = n => { const d = new Date(dayKey + "T12:00:00"); d.setDate(d.getDate() + n); loadDay(d.toLocaleDateString("sv-SE")); };
+$("prev").onclick = () => shift(-1);
+$("next").onclick = () => shift(1);
+$("dayPick").onchange = e => e.target.value && loadDay(e.target.value);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { Object.values(charts).forEach(c => c.destroy()); for (const k in charts) delete charts[k]; drawAggregates(); drawDay(false); drawKennlinien(); });
+refresh();
+setInterval(refresh, 2 * 60 * 1000);
+setInterval(drawStatus, 30 * 1000);
+</script>
+</body>
+</html>
