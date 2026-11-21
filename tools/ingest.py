@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Nimmt Messzeilen vom ESP32 entgegen und legt sie fuer das Dashboard ab.
 
-Eingabe (Umgebungsvariable ROWS oder --rows): Zeilen durch ';' getrennt, je
-    ts,p,u,i,f,t,u1,i1,u2,i2,e_day,e_total
+Eingabe:
+    ROWS (oder --rows): Zeilen durch ';' getrennt, je
+        ts,p,u,i,f,t,u1,i1,u2,i2,e_day,e_total[,rssi,ap,lat]
+        rssi = WLAN-Signal ESP32 (dBm), ap = Signal Logger-Hotspot (dBm, 0 = nicht gefunden),
+        lat = Antwortzeit des Loggers (ms). Aeltere Firmware schickt nur die ersten 12 Spalten.
+    NET (oder --net), optional: "upload_ms,lost" = Dauer des vorigen Uploads, verlorene Abfragen
 
 Ausgabe:
     docs/data/days/YYYY-MM-DD.csv   alle Messwerte eines Tages (Ortszeit Europe/Berlin)
-    docs/data/summary.json          Tageswerte, Gesamtertrag, letzte Messung
+    docs/data/summary.json          Tageswerte, Gesamtertrag, letzte Messung, Verbindung
 """
 from __future__ import annotations
 
@@ -21,13 +25,16 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-COLS = ["ts", "p", "u", "i", "f", "t", "u1", "i1", "u2", "i2", "e_day", "e_total"]
+BASE = ["ts", "p", "u", "i", "f", "t", "u1", "i1", "u2", "i2", "e_day", "e_total"]
+NETC = ["rssi", "ap", "lat"]
+COLS = BASE + NETC
 TZ = ZoneInfo("Europe/Berlin")
 MAX_ROWS = 2000
 # Plausibilitaet: BW-MI600 kann maximal ~600 W, Gesamtzaehler < 1 GWh
 LIMITS = {"p": (0, 1000), "u": (0, 300), "i": (0, 10), "f": (0, 70), "t": (-50, 120),
           "u1": (0, 80), "i1": (0, 20), "u2": (0, 80), "i2": (0, 20),
           "e_day": (0, 10), "e_total": (0, 1_000_000)}
+NET_LIMITS = {"rssi": (-110, -1), "ap": (-110, -1), "lat": (1, 60_000)}
 
 
 def parse_rows(raw: str) -> list[dict]:
@@ -38,7 +45,7 @@ def parse_rows(raw: str) -> list[dict]:
         if not part:
             continue
         fields = part.split(",")
-        if len(fields) != len(COLS):
+        if len(fields) not in (len(BASE), len(COLS)):
             print(f"uebersprungen (Spalten): {part[:80]!r}", file=sys.stderr)
             continue
         try:
@@ -54,11 +61,27 @@ def parse_rows(raw: str) -> list[dict]:
         if any(not (lo <= row[k] <= hi) for k, (lo, hi) in LIMITS.items()):
             print(f"uebersprungen (Grenzwert): {part[:80]!r}", file=sys.stderr)
             continue
+        # Verbindungswerte ausserhalb des Bereichs (z. B. Hotspot nicht gefunden = 0) -> leer
+        for k, (lo, hi) in NET_LIMITS.items():
+            if k in row and not (lo <= row[k] <= hi):
+                row[k] = None
         rows.append(row)
     return rows[:MAX_ROWS]
 
 
-def fmt(v: float) -> str:
+def parse_net(raw: str) -> dict | None:
+    try:
+        up_ms, lost = (int(x) for x in raw.split(","))
+    except ValueError:
+        return None
+    if not (0 <= up_ms <= 120_000 and 0 <= lost <= 60_000):
+        return None
+    return {"up_ms": up_ms, "lost": lost}
+
+
+def fmt(v) -> str:
+    if v is None:
+        return ""
     return f"{v:.2f}".rstrip("0").rstrip(".") if isinstance(v, float) else str(v)
 
 
@@ -67,7 +90,11 @@ def read_day(path: Path) -> dict[int, dict]:
     if path.exists():
         with path.open(newline="", encoding="utf-8") as fh:
             for r in csv.DictReader(fh):
-                out[int(r["ts"])] = {"ts": int(r["ts"]), **{k: float(r[k]) for k in COLS[1:]}}
+                row = {"ts": int(r["ts"])}
+                for k in COLS[1:]:
+                    v = r.get(k)
+                    row[k] = float(v) if v not in (None, "") else None
+                out[row["ts"]] = row
     return out
 
 
@@ -77,13 +104,18 @@ def write_day(path: Path, rows: dict[int, dict]) -> None:
         w = csv.writer(fh, lineterminator="\n")
         w.writerow(COLS)
         for ts in sorted(rows):
-            w.writerow([fmt(rows[ts][c]) for c in COLS])
+            w.writerow([fmt(rows[ts].get(c)) for c in COLS])
 
 
-def day_stats(rows: dict[int, dict]) -> dict:
+def avg(vals: list) -> float | None:
+    vals = [v for v in vals if v is not None]
+    return round(sum(vals) / len(vals), 1) if vals else None
+
+
+def day_stats(rows: dict[int, dict], old: dict) -> dict:
     vals = [rows[t] for t in sorted(rows)]
     peak = max(vals, key=lambda r: r["p"])
-    return {
+    st = {
         "kwh": round(max(r["e_day"] for r in vals), 2),
         "peak_w": round(peak["p"], 1),
         "peak_ts": peak["ts"],
@@ -92,11 +124,21 @@ def day_stats(rows: dict[int, dict]) -> dict:
         "samples": len(vals),
         "t_max": round(max(r["t"] for r in vals), 1),
     }
+    for k in NETC:
+        a = avg([r.get(k) for r in vals])
+        if a is not None:
+            st[f"{k}_avg"] = a
+    # Upload-Statistik wird pro Upload hochgezaehlt, nicht aus den Zeilen berechnet
+    for k in ("lost", "up_n", "up_ms_sum", "up_ms_max"):
+        if k in old:
+            st[k] = old[k]
+    return st
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", default=os.environ.get("ROWS", ""))
+    ap.add_argument("--net", default=os.environ.get("NET", ""))
     ap.add_argument("--data", default="docs/data")
     args = ap.parse_args()
 
@@ -121,13 +163,25 @@ def main() -> int:
         for r in rows:
             merged[r["ts"]] = r
         write_day(path, merged)
-        days[d] = day_stats(merged)
+        days[d] = day_stats(merged, days.get(d, {}))
         print(f"{d}: +{len(rows)} Zeilen, {len(merged)} gesamt, {days[d]['kwh']} kWh")
 
     latest = max(new, key=lambda r: r["ts"])
     if latest["ts"] >= summary.get("latest", {}).get("ts", 0):
-        summary["latest"] = {k: latest[k] for k in COLS}
+        summary["latest"] = {k: latest[k] for k in COLS if latest.get(k) is not None}
         summary["total_kwh"] = latest["e_total"]
+
+    net = parse_net(args.net)
+    if net:
+        d = datetime.fromtimestamp(latest["ts"], TZ).strftime("%Y-%m-%d")
+        st = days[d]
+        st["lost"] = st.get("lost", 0) + net["lost"]
+        if net["up_ms"] > 0:                     # 0 = erster Upload nach dem Start, noch kein Wert
+            st["up_n"] = st.get("up_n", 0) + 1
+            st["up_ms_sum"] = st.get("up_ms_sum", 0) + net["up_ms"]
+            st["up_ms_max"] = max(st.get("up_ms_max", 0), net["up_ms"])
+        summary["net"] = {"ts": int(time.time()), **net}
+
     summary["updated"] = int(time.time())
     summary["days"] = dict(sorted(days.items()))
     summary_path.parent.mkdir(parents=True, exist_ok=True)

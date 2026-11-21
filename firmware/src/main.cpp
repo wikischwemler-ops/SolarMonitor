@@ -5,6 +5,7 @@
 //   * Werte im RAM puffern, alle 10 min per GitHub "repository_dispatch" hochladen
 //   * GitHub Action haengt die Werte an docs/data/ an -> GitHub Pages Dashboard
 //   * nachts (Logger aus) Tiefschlaf, alle 30 min kurz pruefen
+//   * Verbindung: WLAN-Signal ESP32, Signal des Logger-Hotspots, Antwortzeit Logger, Upload-Dauer
 //   * lokaler Status: http://solarmonitor.local/   Update per WLAN: ArduinoOTA
 #include <Arduino.h>
 #include <WiFi.h>
@@ -20,6 +21,9 @@
 static_assert(LOGGER_SN != 0, "secrets.h: LOGGER_SN (WIFI-Nummer vom Typenschild) eintragen");
 static_assert(sizeof(GH_TOKEN) > 40, "secrets.h: GH_TOKEN (fine-grained Token) eintragen");
 
+// Der WLAN-Stick sendet zusaetzlich einen eigenen Hotspot "AP_<WIFI-Nummer>". Dessen Signal am
+// Standort des ESP32 zeigt, wie gut der Stick funkt. Abweichenden Namen in secrets.h als LOGGER_AP setzen.
+
 // ---------- Einstellungen ----------
 static const uint32_t POLL_MS           = 60UL * 1000;        // Abfrageintervall
 static const uint32_t FLUSH_MS          = 10UL * 60 * 1000;   // Upload-Intervall (oeffentliches Repo: Actions kostenlos)
@@ -31,6 +35,7 @@ static const int      FAILS_AFTER_WAKE  = 3;                  // nach Aufwachen:
 static const uint64_t NIGHT_SLEEP_US    = 30ULL * 60 * 1000000;
 static const uint16_t REG_FIRST         = 59;
 static const uint16_t REG_COUNT         = 54;                 // 59..112
+static const uint32_t SCAN_MS           = 10UL * 60 * 1000;   // Hotspot-Signal alle 10 min messen
 
 RTC_DATA_ATTR uint32_t bootCount = 0;
 RTC_DATA_ATTR bool     wokeFromNight = false;
@@ -40,6 +45,9 @@ struct Sample {
   float p, u, i, f, t;               // AC-Leistung W, Spannung V, Strom A, Frequenz Hz, Temperatur C
   float u1, i1, u2, i2;              // PV1/PV2 Spannung V, Strom A
   float eDay, eTotal;                // Ertrag heute / gesamt kWh
+  int8_t   rssi;                     // WLAN-Signal ESP32 -> Router, dBm
+  int8_t   ap;                       // Signal Logger-Hotspot am ESP32, dBm (0 = nicht gefunden)
+  uint16_t lat;                      // Antwortzeit des Loggers, ms
 };
 
 static Sample   buf[MAX_ROWS];
@@ -52,6 +60,12 @@ static int      lastUploadCode = 0;
 static uint32_t lastUploadTs = 0;
 static uint8_t  seqNo = 0;
 static uint32_t wifiLostSince = 0;
+static uint16_t lastLatMs = 0;           // Antwortzeit der letzten erfolgreichen Abfrage
+static int8_t   apRssi = 0;              // zuletzt gemessenes Hotspot-Signal (0 = nicht gefunden)
+static uint32_t lastScan = 0;
+static uint32_t lastUploadMs = 0;        // Dauer des letzten erfolgreichen Uploads
+static uint16_t lostPolls = 0;           // fehlgeschlagene Abfragen seit dem letzten Upload
+static char     apName[24];
 static WebServer server(80);
 
 // ---------- Modbus / Solarman V5 ----------
@@ -108,6 +122,7 @@ static bool readRegisters(uint16_t addr, uint16_t qty, uint16_t* out) {
   fr[35] = 0x15;
 
   WiFiClient cl;
+  const uint32_t tStart = millis();
   if (!cl.connect(LOGGER_IP, 8899, 3000)) return false;
   cl.write(fr, sizeof fr);
   uint8_t rx[512];
@@ -124,6 +139,7 @@ static bool readRegisters(uint16_t addr, uint16_t qty, uint16_t* out) {
     }
   }
   cl.stop();
+  if (ok) lastLatMs = (uint16_t)min<uint32_t>(millis() - tStart, 60000);
   return ok;
 }
 
@@ -141,20 +157,29 @@ static bool pollInverter(Sample& s) {
   s.t      = ((int32_t)R(90) - 1000) / 100.0f;
   s.u1     = R(109) / 10.0f; s.i1 = R(110) / 10.0f;
   s.u2     = R(111) / 10.0f; s.i2 = R(112) / 10.0f;
+  s.rssi   = (int8_t)WiFi.RSSI();
+  s.ap     = apRssi;
+  s.lat    = lastLatMs;
   return true;
 }
 
 // ---------- Upload ----------
 static int formatRow(const Sample& s, char* o, size_t cap) {
-  return snprintf(o, cap, "%lu,%.1f,%.1f,%.1f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f",
-                  (unsigned long)s.ts, s.p, s.u, s.i, s.f, s.t, s.u1, s.i1, s.u2, s.i2, s.eDay, s.eTotal);
+  return snprintf(o, cap, "%lu,%.1f,%.1f,%.1f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%u",
+                  (unsigned long)s.ts, s.p, s.u, s.i, s.f, s.t, s.u1, s.i1, s.u2, s.i2, s.eDay, s.eTotal,
+                  s.rssi, s.ap, s.lat);
 }
 
 static bool uploadChunk(int count) {
   String body;
-  body.reserve(count * 64 + 128);
-  body += "{\"event_type\":\"solar-data\",\"client_payload\":{\"v\":1,\"rows\":\"";
-  char line[96];
+  body.reserve(count * 80 + 160);
+  // net = Dauer des vorigen Uploads (ms), verlorene Abfragen seit dem vorigen Upload
+  char net[32];
+  snprintf(net, sizeof net, "%lu,%u", (unsigned long)lastUploadMs, lostPolls);
+  body += "{\"event_type\":\"solar-data\",\"client_payload\":{\"v\":2,\"net\":\"";
+  body += net;
+  body += "\",\"rows\":\"";
+  char line[112];
   for (int k = 0; k < count; k++) {
     formatRow(buf[k], line, sizeof line);
     if (k) body += ';';
@@ -172,10 +197,16 @@ static bool uploadChunk(int count) {
   http.addHeader("X-GitHub-Api-Version", "2022-11-28");
   http.addHeader("User-Agent", "SolarMonitor-ESP32");
   http.addHeader("Content-Type", "application/json");
+  const uint32_t t0 = millis();
   lastUploadCode = http.POST(body);
+  const uint32_t dt = millis() - t0;
   http.end();
-  if (lastUploadCode == 204) lastUploadTs = (uint32_t)time(nullptr);
-  Serial.printf("Upload %d Zeilen -> HTTP %d\n", count, lastUploadCode);
+  if (lastUploadCode == 204) {
+    lastUploadTs = (uint32_t)time(nullptr);
+    lastUploadMs = dt;
+    lostPolls = 0;
+  }
+  Serial.printf("Upload %d Zeilen -> HTTP %d (%lu ms)\n", count, lastUploadCode, (unsigned long)dt);
   return lastUploadCode == 204;
 }
 
@@ -200,16 +231,30 @@ static void store(const Sample& s) {
 
 // ---------- Lokaler Status ----------
 static void handleStatus() {
-  char row[96] = "";
+  char row[112] = "";
   if (haveLast) formatRow(last, row, sizeof row);
-  char o[512];
+  char o[700];
   snprintf(o, sizeof o,
-           "{\"last\":\"%s\",\"columns\":\"ts,p,u,i,f,t,u1,i1,u2,i2,e_day,e_total\","
-           "\"buffered\":%d,\"fails\":%d,\"upload_http\":%d,\"upload_ts\":%lu,"
-           "\"uptime_s\":%lu,\"boots\":%lu,\"rssi\":%d,\"heap\":%u}",
-           row, nRows, fails, lastUploadCode, (unsigned long)lastUploadTs,
-           (unsigned long)(millis() / 1000), (unsigned long)bootCount, WiFi.RSSI(), ESP.getFreeHeap());
+           "{\"last\":\"%s\",\"columns\":\"ts,p,u,i,f,t,u1,i1,u2,i2,e_day,e_total,rssi,ap,lat\","
+           "\"buffered\":%d,\"fails\":%d,\"lost\":%u,\"upload_http\":%d,\"upload_ts\":%lu,\"upload_ms\":%lu,"
+           "\"uptime_s\":%lu,\"boots\":%lu,\"rssi\":%d,\"ap\":\"%s\",\"ap_rssi\":%d,\"lat_ms\":%u,\"heap\":%u}",
+           row, nRows, fails, lostPolls, lastUploadCode, (unsigned long)lastUploadTs, (unsigned long)lastUploadMs,
+           (unsigned long)(millis() / 1000), (unsigned long)bootCount, WiFi.RSSI(), apName, apRssi, lastLatMs,
+           ESP.getFreeHeap());
   server.send(200, "application/json", o);
+}
+
+// ---------- Hotspot-Signal des Loggers ----------
+static void scanLoggerAp() {
+  lastScan = millis();
+  // nur nach dem Hotspot suchen (kurz, die bestehende WLAN-Verbindung bleibt erhalten)
+  int n = WiFi.scanNetworks(false, true, false, 120, 0, apName);
+  int8_t best = 0;
+  for (int k = 0; k < n; k++)
+    if (WiFi.SSID(k) == apName && (best == 0 || WiFi.RSSI(k) > best)) best = (int8_t)WiFi.RSSI(k);
+  WiFi.scanDelete();
+  apRssi = best;
+  Serial.printf("Hotspot %s: %d dBm\n", apName, apRssi);
 }
 
 // ---------- Nacht ----------
@@ -244,7 +289,13 @@ void setup() {
     esp_sleep_enable_timer_wakeup(5ULL * 60 * 1000000);
     esp_deep_sleep_start();
   }
-  Serial.printf("WLAN ok: %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("WLAN ok: %s (%d dBm)\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+#ifdef LOGGER_AP
+  snprintf(apName, sizeof apName, "%s", LOGGER_AP);
+#else
+  snprintf(apName, sizeof apName, "AP_%lu", (unsigned long)LOGGER_SN);
+#endif
+  scanLoggerAp();
 
   configTzTime("UTC0", "pool.ntp.org", "time.google.com");
   for (int k = 0; k < 40 && time(nullptr) < 1700000000; k++) delay(250);
@@ -279,12 +330,14 @@ void loop() {
       fails = 0;
       last = s; haveLast = true;
       store(s);
-      Serial.printf("P=%.1f W  heute=%.1f kWh  gesamt=%.1f kWh\n", s.p, s.eDay, s.eTotal);
-    } else if (++fails >= NIGHT_AFTER_FAILS) {
-      goToSleep();
+      Serial.printf("P=%.1f W  heute=%.1f kWh  gesamt=%.1f kWh  Logger %u ms\n", s.p, s.eDay, s.eTotal, s.lat);
+    } else {
+      if (lostPolls < 60000) lostPolls++;
+      if (++fails >= NIGHT_AFTER_FAILS) goToSleep();
     }
   }
 
+  if (millis() - lastScan >= SCAN_MS) scanLoggerAp();
   if (nRows && millis() - lastFlush >= FLUSH_MS) flushBuffer();
   delay(10);
 }

@@ -22,7 +22,8 @@
 | ⚡ **Live** | Tacho 0–600 W, animierter Energiefluss Modul 1 / Modul 2 → Wechselrichter → Hausnetz, Wirkungsgrad η |
 | 📈 **Tagesverläufe** | Leistung, Modulspannung, Modulstrom, Netzspannung, Netzfrequenz, Temperatur, Ertrag – Tag frei wählbar |
 | 🔬 **Kennlinien** | P-U (wo der MPP-Tracker arbeitet), U-I, Wirkungsgrad über DC-Leistung |
-| 📊 **Erträge** | Tageserträge der letzten 30 Tage, Monatserträge, Bestwerte |
+| 📊 **Erträge** | Tage, Wochen (KW), Monate und Jahre umschaltbar; diese Woche / dieser Monat / dieses Jahr mit Vorperiode; Bestwerte |
+| 📶 **Verbindung** | WLAN-Signal des ESP32, Funksignal des Wechselrichter-Sticks, Antwortzeit des Sticks, Upload-Dauer zu GitHub, verlorene Abfragen – mit Tagesverlauf |
 | 📱 **Überall** | Responsiv für Handy, Tablet und Desktop, Hell- und Dunkelmodus |
 | 🔋 **Sparsam** | ESP32 mit ca. 0,4 W, nachts Tiefschlaf; GitHub kostenlos (öffentliches Repo) |
 
@@ -73,8 +74,13 @@ Stromausfall von selbst und braucht keine Updates des Betriebssystems.
 | `t` | Temperatur Wechselrichter °C | 90 | (x − 1000) / 100 |
 | `u1`, `i1`, `u2`, `i2` | Modul 1 / Modul 2: Spannung V, Strom A | 109–112 | 0,1 |
 | `e_day`, `e_total` | Ertrag heute / gesamt, kWh | 60, 63/64 | 0,1 |
+| `rssi` | WLAN-Signal ESP32 → Router, dBm | – | – |
+| `ap` | Signal des Hotspots `AP_<WIFI-Nummer>`, den der Stick aussendet, am Ort des ESP32, dBm (leer = nicht gefunden) | – | – |
+| `lat` | Antwortzeit des Sticks auf die Abfrage, ms | – | – |
 
 Holding-Register, Modbus-Slave 1, Funktion 3; gelesen wird der Block 59–112 in einer Anfrage.
+Zusätzlich schickt der ESP32 bei jedem Upload die Dauer des vorigen Uploads und die Zahl der fehlgeschlagenen Abfragen.
+Die Werte erscheinen alle 10 Minuten im Dashboard; sekundengenau zeigt sie die Status-Seite des ESP32 im Heimnetz.
 
 ## Einrichtung
 
