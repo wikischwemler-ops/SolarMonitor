@@ -1,31 +1,80 @@
-# SolarMonitor
+<h1 align="center">☀️ SolarMonitor</h1>
 
-Rund-um-die-Uhr-Monitoring für ein Balkonkraftwerk mit **Bosswerk BW-MI600** (baugleich Deye SUN600G3)
-und 2 × 410 Wp, **ohne die Hersteller-App**.
+<p align="center">
+  Rund-um-die-Uhr-Monitoring für ein Balkonkraftwerk mit <b>Bosswerk BW-MI600</b> (baugleich Deye SUN600G3) –
+  <b>ohne Hersteller-App, ohne Cloud des Herstellers</b>, mit eigenem Dashboard auf GitHub Pages.
+</p>
 
-```
-Wechselrichter ──WLAN──▶ ESP32-WROOM-32 ──alle 10 min, HTTPS──▶ GitHub Action ──▶ docs/data ──▶ GitHub Pages
- (Logger, Port 8899)      liest jede Minute         repository_dispatch       (Commit)         Dashboard
-```
+<p align="center">
+  <a href="https://wikischwemler-ops.github.io/SolarMonitor/"><b>➜ Live-Dashboard öffnen</b></a>
+</p>
 
-- **ESP32** fragt den WLAN-Stick des Wechselrichters lokal ab (Solarman-V5-Protokoll, TCP 8899, nur die
-  Logger-Seriennummer nötig) und puffert bis zu 6 h. Verbrauch ca. 0,3–0,5 W, nachts Tiefschlaf.
-- **GitHub Action** [`ingest.yml`](.github/workflows/ingest.yml) prüft die Werte und legt sie ab:
-  `docs/data/days/JJJJ-MM-TT.csv` (Minutenwerte) und `docs/data/summary.json` (Tageswerte).
-- **Dashboard** [`docs/index.html`](docs/index.html): Live-Tacho und animierter Energiefluss, Tagesverläufe
-  (Leistung, Spannungen, Ströme, Netz, Temperatur, Ertrag), Kennlinien (P-U, U-I, Wirkungsgrad),
-  Tages- und Monatserträge, Bestwerte.
+<p align="center">
+  <img src="docs/img/dashboard-dark.png" alt="Dashboard im Dunkelmodus: Live-Tacho, Energiefluss, Erträge" width="900">
+</p>
+
+---
+
+## Was es kann
+
+| | |
+|---|---|
+| ⚡ **Live** | Tacho 0–600 W, animierter Energiefluss Modul 1 / Modul 2 → Wechselrichter → Hausnetz, Wirkungsgrad η |
+| 📈 **Tagesverläufe** | Leistung, Modulspannung, Modulstrom, Netzspannung, Netzfrequenz, Temperatur, Ertrag – Tag frei wählbar |
+| 🔬 **Kennlinien** | P-U (wo der MPP-Tracker arbeitet), U-I, Wirkungsgrad über DC-Leistung |
+| 📊 **Erträge** | Tageserträge der letzten 30 Tage, Monatserträge, Bestwerte |
+| 📱 **Überall** | Responsiv für Handy, Tablet und Desktop, Hell- und Dunkelmodus |
+| 🔋 **Sparsam** | ESP32 mit ca. 0,4 W, nachts Tiefschlaf; GitHub kostenlos (öffentliches Repo) |
+
+<p align="center">
+  <img src="docs/img/dashboard-mobile.png" alt="Dashboard auf dem Handy" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/img/dashboard-desktop.png" alt="Dashboard auf dem Desktop, ganze Seite" width="520">
+</p>
+<p align="center"><sub>Bilder mit Beispieldaten</sub></p>
+
+## Aufbau
+
+<p align="center">
+  <img src="docs/img/aufbau.svg" alt="Aufbau: Module → Wechselrichter mit WLAN-Logger → Router ← ESP32 → GitHub Action → GitHub Pages" width="900">
+</p>
+
+1. Der **WLAN-Stick im Wechselrichter** spricht im Heimnetz das Solarman-V5-Protokoll (TCP-Port 8899).
+   Zum Auslesen genügt seine Seriennummer (**„WIFI-Nummer“** auf dem Typenschild), kein Passwort.
+2. Der **ESP32** fragt jede Minute die Messwerte ab und puffert sie (bis zu 6 h, falls das Internet weg ist).
+3. Alle **10 Minuten** schickt er die gesammelten Zeilen per HTTPS (`repository_dispatch`) an GitHub.
+4. Die **GitHub Action** [`ingest.yml`](.github/workflows/ingest.yml) prüft die Werte und schreibt sie nach
+   `docs/data/days/JJJJ-MM-TT.csv` (Minutenwerte) und `docs/data/summary.json` (Tageswerte).
+5. **GitHub Pages** liefert das Dashboard [`docs/index.html`](docs/index.html) aus.
+
+## Hardware
+
+| Teil | Details | ca. Preis |
+|---|---|---|
+| 2 × PV-Modul | je 410 Wp, zusammen 820 Wp | vorhanden |
+| Wechselrichter | Bosswerk BW-MI600, 600 W AC, 2 MPP-Tracker, eingebauter WLAN-Logger | vorhanden |
+| Mikrocontroller | **ESP32-WROOM-32** DevKit (z. B. ESP32-DevKitC) mit USB-Seriell-Chip CP2102 oder CH340 | 5–8 € |
+| Stromversorgung | USB-Netzteil 5 V / 1 A und **Datenkabel** (reine Ladekabel funktionieren nicht zum Flashen) | 5 € |
+| Netzwerk | WLAN-Router mit 2,4 GHz, in Reichweite von Wechselrichter und ESP32 | vorhanden |
+
+Kein Löten, keine Verbindung zwischen ESP32 und Wechselrichter – beide hängen nur im WLAN.
+Der ESP32 kann irgendwo im Haus an einer Steckdose stecken.
+
+**Warum ESP32 statt Raspberry Pi?** Ca. 0,4 W statt 2–3 W, kein SD-Karten-Verschleiß, startet nach
+Stromausfall von selbst und braucht keine Updates des Betriebssystems.
 
 ## Gemessene Werte
 
-| Spalte | Bedeutung | Register |
-|---|---|---|
-| `ts` | Unix-Zeit (UTC) | – |
-| `p` | Einspeiseleistung AC, W | 86/87 |
-| `u`, `i`, `f` | Netzspannung V, Strom A, Frequenz Hz | 73, 76, 79 |
-| `t` | Temperatur °C | 90 |
-| `u1`, `i1`, `u2`, `i2` | PV1/PV2 Spannung V, Strom A | 109–112 |
-| `e_day`, `e_total` | Ertrag heute / gesamt, kWh | 60, 63/64 |
+| Spalte | Bedeutung | Register | Faktor |
+|---|---|---|---|
+| `ts` | Unix-Zeit (UTC) | – | – |
+| `p` | Einspeiseleistung AC, W | 86/87 | 0,1 |
+| `u`, `i`, `f` | Netzspannung V, Strom A, Frequenz Hz | 73, 76, 79 | 0,1 / 0,1 / 0,01 |
+| `t` | Temperatur Wechselrichter °C | 90 | (x − 1000) / 100 |
+| `u1`, `i1`, `u2`, `i2` | Modul 1 / Modul 2: Spannung V, Strom A | 109–112 | 0,1 |
+| `e_day`, `e_total` | Ertrag heute / gesamt, kWh | 60, 63/64 | 0,1 |
+
+Holding-Register, Modbus-Slave 1, Funktion 3; gelesen wird der Block 59–112 in einer Anfrage.
 
 ## Einrichtung
 
@@ -40,6 +89,7 @@ GitHub → Settings → Developer settings → **Fine-grained personal access to
 
 ### 3. Firmware flashen
 Benötigt [PlatformIO](https://platformio.org/) (VS Code-Erweiterung oder `pip install platformio`).
+Unter Windows in **PowerShell** bauen, nicht in Git Bash.
 
 ```powershell
 cd firmware
@@ -48,7 +98,8 @@ pio run -e esp32dev -t upload                        # ESP32 per USB angeschloss
 pio device monitor                                   # Log ansehen
 ```
 
-`secrets.h` steht in `.gitignore` und wird nie committet.
+`secrets.h` steht in `.gitignore` und wird nie committet. Fehlen Seriennummer oder Token, bricht der Build mit
+einem Hinweis ab.
 
 Spätere Updates per WLAN: `$env:SOLAR_OTA_PASS="..."; pio run -e ota -t upload`
 
@@ -65,6 +116,18 @@ Repo → Settings → Pages → *Deploy from a branch* → `main` / `/docs`.
   `python tools/pc_collector.py --sn <WIFI-Nummer> --count 5 --interval 60 --dispatch wikischwemler-ops/SolarMonitor`
   (Token in `GH_TOKEN`).
 - Testzeilen ohne Hardware: Actions → *Messwerte einsammeln* → *Run workflow*.
+
+## Projektstruktur
+
+```
+firmware/            ESP32-Firmware (PlatformIO, Arduino)
+  src/main.cpp       Abfrage, Puffer, Upload, Nachtschlaf, OTA, Status-Seite
+  include/           Root-Zertifikate, secrets.example.h
+tools/ingest.py      Prüft Messzeilen und schreibt docs/data (läuft in der Action)
+tools/pc_collector.py  Test-/Ersatz-Collector für den PC
+docs/                Dashboard (GitHub Pages) und Messdaten
+.github/workflows/   Action „Messwerte einsammeln“
+```
 
 Die Daten-Commits macht die Action direkt auf `main` (automatische Messwerte).
 Code-Änderungen laufen über Pull Requests mit Branch-Namen `xxx/yyy` (siehe `docs/branch-naming-setup.md`).

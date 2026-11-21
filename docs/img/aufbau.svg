@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 430" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6b6a66"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2a78d6"/></marker>
+    <pattern id="cells" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#1f3a63"/><rect x="1" y="1" width="12" height="12" fill="#27497b"/></pattern>
+  </defs>
+  <rect width="960" height="430" rx="18" fill="#faf9f6"/>
+  <text x="32" y="40" font-size="20" font-weight="700" fill="#1c1b19">Aufbau</text>
+  <text x="32" y="62" font-size="13" fill="#6b6a66">Keine Verkabelung zum Wechselrichter nötig: der ESP32 fragt den WLAN-Stick über das Heimnetz ab.</text>
+
+  <!-- Sonne -->
+  <g transform="translate(70 120)"><circle r="16" fill="#f2b632"/><g stroke="#f2b632" stroke-width="3" stroke-linecap="round"><path d="M0-26v-7M0 26v7M-26 0h-7M26 0h7M-18-18l-5-5M18 18l5 5M-18 18l-5 5M18-18l5-5"/></g></g>
+
+  <!-- Module -->
+  <g transform="translate(40 160)">
+    <rect width="96" height="62" rx="4" fill="url(#cells)" stroke="#16263f" stroke-width="2"/>
+    <rect y="80" width="96" height="62" rx="4" fill="url(#cells)" stroke="#16263f" stroke-width="2"/>
+    <text x="48" y="166" text-anchor="middle" font-size="13" font-weight="600" fill="#1c1b19" transform="translate(0 0)"></text>
+  </g>
+  <text x="88" y="326" text-anchor="middle" font-size="13" font-weight="600" fill="#1c1b19">2 × PV-Modul</text>
+  <text x="88" y="343" text-anchor="middle" font-size="12" fill="#6b6a66">je 410 Wp = 820 Wp</text>
+
+  <!-- DC Leitungen -->
+  <path d="M136 191 C170 191 170 215 206 215" fill="none" stroke="#e06a2c" stroke-width="3"/>
+  <path d="M136 271 C170 271 170 245 206 245" fill="none" stroke="#1fa37a" stroke-width="3"/>
+  <text x="171" y="182" text-anchor="middle" font-size="11" fill="#6b6a66">DC (MC4)</text>
+
+  <!-- Wechselrichter -->
+  <rect x="206" y="180" width="170" height="100" rx="12" fill="#ffffff" stroke="#d9d6cf" stroke-width="1.5"/>
+  <text x="291" y="208" text-anchor="middle" font-size="14" font-weight="700" fill="#1c1b19">Bosswerk BW-MI600</text>
+  <text x="291" y="226" text-anchor="middle" font-size="12" fill="#6b6a66">Mikrowechselrichter</text>
+  <text x="291" y="242" text-anchor="middle" font-size="12" fill="#6b6a66">600 W · 2 MPP-Tracker</text>
+  <rect x="232" y="254" width="118" height="18" rx="9" fill="#eaf2fc"/>
+  <text x="291" y="267" text-anchor="middle" font-size="11" font-weight="600" fill="#2a78d6">WLAN-Logger :8899</text>
+
+  <!-- AC -->
+  <path d="M291 280 V330" stroke="#6b6a66" stroke-width="3" marker-end="url(#a)"/>
+  <rect x="226" y="334" width="130" height="44" rx="10" fill="#ffffff" stroke="#d9d6cf" stroke-width="1.5"/>
+  <text x="291" y="353" text-anchor="middle" font-size="13" font-weight="600" fill="#1c1b19">Hausnetz</text>
+  <text x="291" y="369" text-anchor="middle" font-size="11" fill="#6b6a66">230 V / 50 Hz</text>
+
+  <!-- Router -->
+  <rect x="440" y="180" width="130" height="100" rx="12" fill="#ffffff" stroke="#d9d6cf" stroke-width="1.5"/>
+  <g transform="translate(505 214)" fill="none" stroke="#2a78d6" stroke-width="3" stroke-linecap="round"><path d="M-16-4a23 23 0 0 1 32 0M-10 3a14 14 0 0 1 20 0"/><circle cy="10" r="2.5" fill="#2a78d6"/></g>
+  <text x="505" y="250" text-anchor="middle" font-size="14" font-weight="700" fill="#1c1b19">WLAN-Router</text>
+  <text x="505" y="267" text-anchor="middle" font-size="12" fill="#6b6a66">2,4 GHz</text>
+
+  <!-- Logger <-> Router -->
+  <path d="M376 230 H436" stroke="#2a78d6" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#b)"/>
+  <text x="406" y="222" text-anchor="middle" font-size="11" fill="#2a78d6">WLAN</text>
+
+  <!-- ESP32 -->
+  <g transform="translate(440 330)">
+    <rect width="130" height="70" rx="10" fill="#1c1b19"/>
+    <rect x="12" y="12" width="44" height="34" rx="3" fill="#cfcbc2"/>
+    <text x="34" y="34" text-anchor="middle" font-size="9" font-weight="700" fill="#1c1b19">WROOM</text>
+    <g fill="#f2b632"><rect x="66" y="14" width="4" height="4"/><rect x="74" y="14" width="4" height="4"/><rect x="82" y="14" width="4" height="4"/><rect x="90" y="14" width="4" height="4"/><rect x="98" y="14" width="4" height="4"/><rect x="106" y="14" width="4" height="4"/></g>
+    <text x="65" y="40" font-size="13" font-weight="700" fill="#ffffff">ESP32</text>
+    <text x="12" y="62" font-size="11" fill="#cfcbc2">5 V USB · ca. 0,4 W</text>
+  </g>
+  <path d="M505 330 V284" stroke="#2a78d6" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#b)"/>
+  <text x="513" y="312" font-size="11" fill="#2a78d6">WLAN, jede Minute</text>
+
+  <!-- Internet / GitHub -->
+  <path d="M570 230 H636" stroke="#6b6a66" stroke-width="2.5" marker-end="url(#a)"/>
+  <text x="603" y="222" text-anchor="middle" font-size="11" fill="#6b6a66">HTTPS</text>
+  <text x="603" y="248" text-anchor="middle" font-size="11" fill="#6b6a66">alle 10 min</text>
+
+  <rect x="640" y="110" width="290" height="240" rx="14" fill="#ffffff" stroke="#d9d6cf" stroke-width="1.5"/>
+  <text x="660" y="138" font-size="14" font-weight="700" fill="#1c1b19">GitHub</text>
+  <g font-size="12">
+    <rect x="660" y="154" width="250" height="44" rx="8" fill="#f3f1ec"/>
+    <text x="674" y="172" font-weight="600" fill="#1c1b19">Action „Messwerte einsammeln“</text>
+    <text x="674" y="188" fill="#6b6a66">prüft und speichert die Zeilen</text>
+    <path d="M785 198 V212" stroke="#6b6a66" stroke-width="2" marker-end="url(#a)"/>
+    <rect x="660" y="216" width="250" height="44" rx="8" fill="#f3f1ec"/>
+    <text x="674" y="234" font-weight="600" fill="#1c1b19">docs/data</text>
+    <text x="674" y="250" fill="#6b6a66">Tages-CSV + summary.json</text>
+    <path d="M785 260 V274" stroke="#6b6a66" stroke-width="2" marker-end="url(#a)"/>
+    <rect x="660" y="278" width="250" height="52" rx="8" fill="#fdf3dc"/>
+    <text x="674" y="298" font-weight="600" fill="#1c1b19">GitHub Pages · Dashboard</text>
+    <text x="674" y="316" fill="#6b6a66">von überall im Browser</text>
+  </g>
+</svg>
