@@ -22,7 +22,7 @@
 | ⚡ **Live** | Tacho 0–600 W, animierter Energiefluss Modul 1 / Modul 2 → Wechselrichter → Hausnetz, Wirkungsgrad η |
 | 📈 **Tagesverläufe** | Leistung, Modulspannung, Modulstrom, Netzspannung, Netzfrequenz, Temperatur, Ertrag – Tag frei wählbar |
 | 🔬 **Kennlinien** | P-U (wo der MPP-Tracker arbeitet), U-I, Wirkungsgrad über DC-Leistung |
-| 📊 **Erträge** | Tage, Wochen (KW), Monate und Jahre umschaltbar; diese Woche / dieser Monat / dieses Jahr mit Vorperiode; Bestwerte |
+| 📊 **Erträge** | Tage, Wochen (KW), Monate und Jahre umschaltbar, mit Trendlinie (gleitender Ø) oder als aufsummierter Verlauf (Jahre übereinander zum Vergleich); diese Woche / dieser Monat / dieses Jahr mit Vorperiode; Bestwerte |
 | 📶 **Verbindung** | WLAN-Signal des ESP32, Funksignal des Wechselrichter-Sticks, Antwortzeit des Sticks, Upload-Dauer zu GitHub, verlorene Abfragen – mit Tagesverlauf |
 | 📱 **Überall** | Responsiv für Handy, Tablet und Desktop, Hell- und Dunkelmodus |
 | 🔋 **Sparsam** | ESP32 mit ca. 0,4 W, nachts Tiefschlaf; GitHub kostenlos (öffentliches Repo) |
