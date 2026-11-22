@@ -590,7 +590,7 @@ function drawPeriods() {
 // Stufen: [Grenze, Text, Klasse, Balken]; Signal in dBm (hoeher = besser), Zeiten in ms (niedriger = besser)
 const SIG = [[-60, "sehr gut", "good", 4], [-67, "gut", "good", 3], [-75, "mäßig", "warn", 2], [-85, "schwach", "bad", 1], [-999, "kritisch", "bad", 0]];
 const LAT = [[150, "sehr gut", "good", 4], [400, "gut", "good", 3], [1500, "langsam", "warn", 2], [4000, "sehr langsam", "bad", 1], [1e9, "kritisch", "bad", 0]];
-const UP  = [[1500, "sehr gut", "good", 4], [3000, "gut", "good", 3], [6000, "langsam", "warn", 2], [12000, "sehr langsam", "bad", 1], [1e9, "kritisch", "bad", 0]];
+const UP  = [[5000, "sehr gut", "good", 4], [10000, "gut", "good", 3], [20000, "langsam", "warn", 2], [40000, "sehr langsam", "bad", 1], [1e9, "kritisch", "bad", 0]];
 const LOSS = [[1, "keine Ausfälle", "good", 4], [5, "selten", "good", 3], [15, "häufig", "warn", 2], [101, "sehr häufig", "bad", 1]];
 const grade = (v, steps, higherBetter) => steps.find(([g]) => higherBetter ? v >= g : v < g);
 const qual = (v, steps, higherBetter, hint) => {
