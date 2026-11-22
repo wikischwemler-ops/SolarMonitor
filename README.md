@@ -87,6 +87,10 @@ Die Werte erscheinen alle 10 Minuten im Dashboard; sekundengenau zeigt sie die S
 ### 1. Feste IP für den Wechselrichter
 Im Router dem WLAN-Stick (aktuell `192.168.0.155`) eine feste IP zuweisen.
 
+**Wichtig bei Gäste-WLAN:** Viele Router (z. B. D-Link DIR-2660) trennen Geräte *innerhalb* der Gästezone
+voneinander. Hängt der Stick im Gäste-WLAN, muss der ESP32 ins Haupt-WLAN (und im Router darf
+„Internet Access Only“ für Gäste nicht aktiv sein). Erkennbar im Log am Satz `Logger: keine TCP-Verbindung`.
+
 ### 2. GitHub-Token
 GitHub → Settings → Developer settings → **Fine-grained personal access tokens** → *Generate new token*:
 - Repository access: **Only select repositories → SolarMonitor**

@@ -123,7 +123,7 @@ static bool readRegisters(uint16_t addr, uint16_t qty, uint16_t* out) {
 
   WiFiClient cl;
   const uint32_t tStart = millis();
-  if (!cl.connect(LOGGER_IP, 8899, 3000)) return false;
+  if (!cl.connect(LOGGER_IP, 8899, 3000)) { Serial.println("Logger: keine TCP-Verbindung"); return false; }
   cl.write(fr, sizeof fr);
   uint8_t rx[512];
   size_t n = 0;
@@ -139,6 +139,11 @@ static bool readRegisters(uint16_t addr, uint16_t qty, uint16_t* out) {
     }
   }
   cl.stop();
+  if (!ok) {
+    Serial.printf("Logger: keine gueltige Antwort (%u Bytes):", (unsigned)n);
+    for (size_t k = 0; k < n && k < 48; k++) Serial.printf(" %02X", rx[k]);
+    Serial.println();
+  }
   if (ok) lastLatMs = (uint16_t)min<uint32_t>(millis() - tStart, 60000);
   return ok;
 }
@@ -326,6 +331,7 @@ void loop() {
   if (millis() - lastPoll >= POLL_MS) {
     lastPoll = millis();
     Sample s;
+    if (time(nullptr) <= 1700000000) Serial.println("Uhrzeit noch nicht synchronisiert (NTP)");
     if (time(nullptr) > 1700000000 && pollInverter(s)) {
       fails = 0;
       last = s; haveLast = true;
