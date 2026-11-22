@@ -128,6 +128,9 @@
   footer { margin-top: 20px; font-size: 12px; color: var(--text-muted); }
 
   /* ---- Ertraege: Zeitraeume ---- */
+  .ctrl-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .ctrl-row .tabs { margin-bottom: 10px; }
+  .legend .dash::before { height: 0; border-top: 2px dashed var(--c); background: none; }
   .periods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
   .periods > div { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
   .periods .l { font-size: 12px; color: var(--text-secondary); }
@@ -298,9 +301,13 @@
   <!-- Ertraege -->
   <section class="card fade-in" style="margin-top:16px">
     <div class="card-head"><h2>Erträge</h2><span class="note" id="yieldNote"></span></div>
-    <div class="tabs" role="tablist" id="yieldTabs"></div>
     <div class="periods" id="periods"></div>
-    <div class="chart"><canvas id="yieldChart"></canvas></div>
+    <div class="ctrl-row">
+      <div class="tabs" role="tablist" id="yieldTabs" aria-label="Zeitraum"></div>
+      <div class="tabs" role="tablist" id="yieldView" aria-label="Ansicht"></div>
+    </div>
+    <div class="legend" id="yieldLegend"></div>
+    <div class="chart"><canvas id="yieldChart"></canvas><div class="empty">Noch keine Erträge</div></div>
   </section>
 
   <!-- Verbindung -->
@@ -520,15 +527,6 @@ function drawKennlinien() {
 }
 
 // ---------- Ertraege ----------
-function bars(id, labels, values, tipTitle) {
-  const opt = baseOptions("kWh");
-  opt.plugins.tooltip.callbacks = { title: it => tipTitle(it[0].dataIndex), label: it => ` Ertrag: ${nf(it.parsed.y, 2)} kWh` };
-  opt.plugins.tooltip.displayColors = false;
-  if (!reduced) opt.animation = { duration: 700, easing: "easeOutQuart", delay: c => c.type === "data" && c.mode === "default" ? c.dataIndex * 22 : 0 };
-  draw(id, { type: "bar", data: { labels, datasets: [{ data: values, backgroundColor: css("--series-1"),
-    borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: "start", maxBarThickness: 28, categoryPercentage: .85, barPercentage: .9 }] }, options: opt });
-}
-
 // Zeitraeume: Schluessel je Tag (YYYY-MM-DD) -> Woche (Montag), Monat, Jahr
 const addDays = (k, n) => { const d = new Date(k + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const monday = k => { const wd = (new Date(k + "T12:00:00Z").getUTCDay() + 6) % 7; return addDays(k, -wd); };
@@ -561,15 +559,106 @@ function sumBy(keyFn) {
   return out;
 }
 
+// Ansicht: Balken mit Trend (gleitender Durchschnitt) oder Verlauf (aufsummiert)
+const VIEWS = { bars: "Ertrag + Trend", cum: "Verlauf" };
+const TREND_N = { day: [7, "7 Tage"], week: [4, "4 Wochen"], month: [3, "3 Monate"], year: [2, "2 Jahre"] };
+const PER_UNIT = { day: "Tag", week: "Woche", month: "Monat", year: "Jahr" };
+let yieldView = "bars";
+$("yieldView").innerHTML = Object.entries(VIEWS).map(([k, l]) => `<button role="tab" data-k="${k}" aria-selected="${k === yieldView}">${l}</button>`).join("");
+$("yieldView").onclick = e => { const k = e.target.dataset?.k; if (!k) return; yieldView = k;
+  [...$("yieldView").children].forEach(b => b.setAttribute("aria-selected", b.dataset.k === k)); drawYield(); };
+
+function movingAvg(vals, n) {
+  return vals.map((_, i) => {
+    if (i < n - 1) return null;
+    const w = vals.slice(i - n + 1, i + 1).filter(v => v != null);
+    return w.length === n ? w.reduce((a, b) => a + b, 0) / n : null;
+  });
+}
+// Steigung der Ausgleichsgeraden (kWh je Zeitraum); der laufende, unvollstaendige Zeitraum zaehlt nicht mit
+function slope(vals) {
+  const pts = vals.slice(0, -1).map((v, i) => [i, v]).filter(([, v]) => v != null);
+  if (pts.length < 3) return null;
+  const n = pts.length, mx = pts.reduce((s, [x]) => s + x, 0) / n, my = pts.reduce((s, [, y]) => s + y, 0) / n;
+  const sxx = pts.reduce((s, [x]) => s + (x - mx) ** 2, 0);
+  return sxx ? pts.reduce((s, [x, y]) => s + (x - mx) * (y - my), 0) / sxx : null;
+}
+
+function legend(items) {
+  $("yieldLegend").innerHTML = items.map(([n, c, dash]) => `<span class="${dash ? "dash" : ""}" style="--c: var(${c})">${n}</span>`).join("");
+}
+
 function drawYield() {
   const p = PERIODS[period], today = dateKey(now());
   const first = Object.keys(summary.days || {}).sort()[0];
   const sums = sumBy(p.key), keys = p.list(today, first);
+  const firstKey = first ? p.key(first) : null;
+  // vor Messbeginn: keine Daten (null), danach fehlende Zeitraeume = 0 kWh
+  const vals = keys.map(k => firstKey && k >= firstKey ? (sums[k] ?? 0) : null);
+  const have = vals.filter(v => v != null);
+  const total = have.reduce((a, b) => a + b, 0);
+  setEmpty("yieldChart", !have.length);
   charts.yieldChart?.destroy(); delete charts.yieldChart;
-  bars("yieldChart", keys.map(p.short), keys.map(k => sums[k] ?? 0), i => p.long(keys[i]));
-  const vals = keys.map(k => sums[k]).filter(v => v != null);
-  const total = vals.reduce((a, b) => a + b, 0);
-  $("yieldNote").textContent = `${p.note} · zusammen ${nf(total, 1)} kWh` + (vals.length > 1 && period !== "year" ? ` · Ø ${nf(total / vals.length, 2)} kWh` : "");
+  if (!first) { legend([]); $("yieldNote").textContent = p.note; return; }
+
+  const note = [`${p.note}`, `zusammen ${nf(total, 1)} kWh`];
+  if (have.length > 1 && period !== "year") note.push(`Ø ${nf(total / have.length, 2)} kWh`);
+  const m = period === "day" || period === "week" ? slope(vals) : null;
+  if (period === "month") {                    // Jahreszeiten: letzten vollen Monat mit dem Vorjahresmonat vergleichen
+    const cur = keys.at(-2), prev = `${+cur.slice(0, 4) - 1}${cur.slice(4)}`;
+    if (firstKey && prev > firstKey && sums[prev]) note.push(`${p.long(cur)} ${sums[cur] >= sums[prev] ? "↗" : "↘"} ${nf(((sums[cur] ?? 0) / sums[prev] - 1) * 100, 0)} % ggü. Vorjahresmonat`);
+  }
+  if (m != null) note.push(`Trend ${m > 0.005 ? "↗ steigend" : m < -0.005 ? "↘ fallend" : "→ gleich"} (${m > 0 ? "+" : ""}${nf(m, 2)} kWh je ${PER_UNIT[period]})`);
+  $("yieldNote").textContent = note.join(" · ");
+
+  const opt = baseOptions(yieldView === "cum" ? "kWh (aufsummiert)" : "kWh");
+  if (!reduced) opt.animation = { duration: 700, easing: "easeOutQuart" };
+  opt.plugins.tooltip.filter = it => it.parsed.y != null;
+  opt.plugins.tooltip.callbacks = { title: it => p.long(keys[it[0].dataIndex]),
+    label: it => ` ${it.dataset.label}: ${nf(it.parsed.y, 2)} kWh` };
+
+  if (yieldView === "bars") {
+    const [n, nLabel] = TREND_N[period];
+    const trend = movingAvg(vals, n);
+    const showTrend = period !== "year" && trend.some(v => v != null);
+    legend([["Ertrag", "--series-1"], ...(showTrend ? [[`Trend (Ø ${nLabel})`, "--series-2", true]] : [])]);
+    draw("yieldChart", { type: "bar", data: { labels: keys.map(p.short), datasets: [
+      { label: "Ertrag", data: vals, backgroundColor: css("--series-1"), order: 2,
+        borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: "start", maxBarThickness: 28, categoryPercentage: .85, barPercentage: .9 },
+      ...(showTrend ? [{ type: "line", label: `Trend (Ø ${nLabel})`, data: trend, order: 1, borderColor: css("--series-2"), backgroundColor: css("--series-2"),
+        borderWidth: 2, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 4, tension: .35, spanGaps: false }] : []),
+    ] }, options: opt });
+    return;
+  }
+
+  if (period !== "year") {                     // Verlauf: aufsummierter Ertrag im Zeitraum
+    let acc = 0;
+    const cum = vals.map(v => v == null ? null : (acc += v));
+    legend([["Ertrag aufsummiert", "--series-1"]]);
+    draw("yieldChart", { type: "line", data: { labels: keys.map(p.short), datasets: [{ label: "Summe", data: cum,
+      borderColor: css("--series-1"), backgroundColor: css("--series-1") + "26", fill: true, borderWidth: 2,
+      pointRadius: 0, pointHoverRadius: 4, tension: .25 }] }, options: opt });
+    return;
+  }
+
+  // Jahre: aufsummierter Ertrag je Monat, ein Linienzug pro Jahr (neueste drei Jahre)
+  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+  const msum = sumBy(k => k.slice(0, 7));
+  const years = keys.slice(-3).reverse();       // Farbe folgt dem Jahr: aktuelles Jahr = Reihe 1
+  const colors = ["--series-1", "--series-2", "--series-3"];
+  const curMonth = today.slice(0, 7);
+  const ds = years.map((y, i) => {
+    let acc = 0;
+    const data = months.map(mm => { const k = `${y}-${mm}`;
+      if (k > curMonth || (firstKey && y < firstKey) || k < first.slice(0, 7)) return null;
+      return (acc += msum[k] ?? 0); });
+    return { label: y, data, borderColor: css(colors[i]), backgroundColor: css(colors[i]), borderWidth: 2,
+             pointRadius: 2.5, pointHoverRadius: 5, tension: .25, spanGaps: false };
+  });
+  legend(years.map((y, i) => [y, colors[i]]));
+  opt.plugins.tooltip.callbacks = { title: it => new Date(`2000-${months[it[0].dataIndex]}-15`).toLocaleDateString("de-DE", { month: "long" }),
+    label: it => ` ${it.dataset.label}: ${nf(it.parsed.y, 1)} kWh bis Monatsende` };
+  draw("yieldChart", { type: "line", data: { labels: months.map(mm => new Date(`2000-${mm}-15`).toLocaleDateString("de-DE", { month: "short" })), datasets: ds }, options: opt });
 }
 
 function drawPeriods() {
