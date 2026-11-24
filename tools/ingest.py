@@ -79,6 +79,24 @@ def parse_net(raw: str) -> dict | None:
     return {"up_ms": up_ms, "lost": lost}
 
 
+ST_KEYS = ["boots", "power_ons", "reset", "wifi_ms", "fails", "rssi", "night"]
+
+
+def parse_st(raw: str) -> dict | None:
+    """Lebenszeichen des ESP32: Durchlaeufe, Starts ohne Tiefschlaf, Grund, WLAN-Dauer, Fehlversuche, Signal, Nacht."""
+    try:
+        vals = [int(x) for x in raw.split(",")]
+    except ValueError:
+        return None
+    if len(vals) != len(ST_KEYS):
+        return None
+    st = dict(zip(ST_KEYS, vals))
+    if not (0 <= st["wifi_ms"] <= 120_000 and -110 <= st["rssi"] <= 0 and 0 <= st["reset"] <= 20):
+        return None
+    st["night"] = bool(st["night"])
+    return st
+
+
 def fmt(v) -> str:
     if v is None:
         return ""
@@ -139,11 +157,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", default=os.environ.get("ROWS", ""))
     ap.add_argument("--net", default=os.environ.get("NET", ""))
+    ap.add_argument("--st", default=os.environ.get("ST", ""))
     ap.add_argument("--data", default="docs/data")
     args = ap.parse_args()
 
     new = parse_rows(args.rows)
-    if not new:
+    esp = parse_st(args.st)
+    if not new and not esp:
         print("keine gueltigen Zeilen")
         return 0
 
@@ -166,23 +186,36 @@ def main() -> int:
         days[d] = day_stats(merged, days.get(d, {}))
         print(f"{d}: +{len(rows)} Zeilen, {len(merged)} gesamt, {days[d]['kwh']} kWh")
 
-    latest = max(new, key=lambda r: r["ts"])
-    if latest["ts"] >= summary.get("latest", {}).get("ts", 0):
-        summary["latest"] = {k: latest[k] for k in COLS if latest.get(k) is not None}
-        summary["total_kwh"] = latest["e_total"]
+    now = int(time.time())
+    if new:
+        latest = max(new, key=lambda r: r["ts"])
+        if latest["ts"] >= summary.get("latest", {}).get("ts", 0):
+            summary["latest"] = {k: latest[k] for k in COLS if latest.get(k) is not None}
+            summary["total_kwh"] = latest["e_total"]
+        stat_day = datetime.fromtimestamp(latest["ts"], TZ).strftime("%Y-%m-%d")
+    else:
+        stat_day = datetime.fromtimestamp(now, TZ).strftime("%Y-%m-%d")
+
+    if esp:
+        prev = summary.get("esp", {})
+        # Neustarts ohne Tiefschlaf (Strom weg, Absturz, Spannungseinbruch) je Tag zaehlen
+        if "power_ons" in prev and esp["power_ons"] > prev["power_ons"]:
+            rs = summary.setdefault("restarts", {})
+            rs[stat_day] = rs.get(stat_day, 0) + esp["power_ons"] - prev["power_ons"]
+        summary["esp"] = {"ts": now, **esp}
+        print(f"Lebenszeichen: {esp}")
 
     net = parse_net(args.net)
-    if net:
-        d = datetime.fromtimestamp(latest["ts"], TZ).strftime("%Y-%m-%d")
-        st = days[d]
+    if net and stat_day in days:
+        st = days[stat_day]
         st["lost"] = st.get("lost", 0) + net["lost"]
         if net["up_ms"] > 0:                     # 0 = erster Upload nach dem Start, noch kein Wert
             st["up_n"] = st.get("up_n", 0) + 1
             st["up_ms_sum"] = st.get("up_ms_sum", 0) + net["up_ms"]
             st["up_ms_max"] = max(st.get("up_ms_max", 0), net["up_ms"])
-        summary["net"] = {"ts": int(time.time()), **net}
+        summary["net"] = {"ts": now, **net}
 
-    summary["updated"] = int(time.time())
+    summary["updated"] = now
     summary["days"] = dict(sorted(days.items()))
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8")
