@@ -350,7 +350,7 @@ const bust = () => "?t=" + Date.now();
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const now = () => Date.now() / 1000;
 
-let summary = null, dayKey = null, dayRows = [], tab = "power";
+let summary = null, dayKey = null, dayRows = [], espRows = [], tab = "power";
 const charts = {};
 
 // ---------- Animierte Zahlen ----------
@@ -490,6 +490,13 @@ async function loadDay(key) {
     const head = lines.shift().split(",");
     dayRows = lines.map(l => Object.fromEntries(l.split(",").map((v, i) => [head[i], +v])));
   } catch { dayRows = []; }
+  try {                                            // Lebenszeichen des ESP32 an diesem Tag
+    const r = await fetch(`data/esp/${key}.csv${bust()}`);
+    if (!r.ok) throw 0;
+    const lines = (await r.text()).trim().split("\n");
+    const head = lines.shift().split(",");
+    espRows = lines.map(l => Object.fromEntries(l.split(",").map((v, i) => [head[i], +v])));
+  } catch { espRows = []; }
   drawDay(true);
   drawKennlinien();
   drawConnChart();
@@ -762,13 +769,54 @@ function drawConn() {
 const CONN_TABS = {
   sig: { label: "Signalstärke", unit: "dBm", d: 0, series: [["WLAN ESP32 → Router", "--series-1", r => r.rssi], ["Funk WR-Stick am ESP32", "--series-2", r => r.ap]] },
   lat: { label: "Antwortzeit WR-Stick", unit: "ms", d: 0, series: [["Antwortzeit", "--series-1", r => r.lat]] },
+  act: { label: "Aktivität", series: [] },
 };
 let connTab = "sig";
 $("connTabs").innerHTML = Object.entries(CONN_TABS).map(([k, t]) => `<button role="tab" data-k="${k}" aria-selected="${k === connTab}">${t.label}</button>`).join("");
 $("connTabs").onclick = e => { const k = e.target.dataset?.k; if (!k) return; connTab = k;
   [...$("connTabs").children].forEach(b => b.setAttribute("aria-selected", b.dataset.k === k)); drawConnChart(); };
 
+// Aktivitaet ueber den Tag: Balken = Messungen je 10 min, Punkte = Meldungen an GitHub, Dreiecke = Neustarts
+function drawActivity() {
+  let start = Date.parse(dayKey + "T00:00:00Z") / 1000 - 3 * 3600;
+  while (dateKey(start) !== dayKey) start += 600;           // 0:00 Uhr Ortszeit (auch bei Sommerzeit)
+  const SLOTS = 144, slotOf = ts => Math.floor((ts - start) / 600);
+  const counts = Array(SLOTS).fill(0), beats = Array(SLOTS).fill(null), boots = Array(SLOTS).fill(null), info = Array(SLOTS).fill("");
+  dayRows.forEach(r => { const i = slotOf(r.ts); if (i >= 0 && i < SLOTS) counts[i]++; });
+  let prevOn = null;
+  espRows.forEach(e => {
+    const i = slotOf(e.ts); if (i < 0 || i >= SLOTS) return;
+    beats[i] = 11;
+    info[i] = `${hhmm(e.ts)} Uhr gemeldet: ${e.rows} Messwerte, WLAN ${nf(e.wifi_ms / 1000, 1)} s, ${e.rssi} dBm${e.night ? ", Nachtbetrieb" : ""}`;
+    if (prevOn != null && e.power_ons > prevOn) { boots[i] = 11; info[i] += ` · neu gestartet (${RESET_TXT[e.reset] || "Grund " + e.reset})`; }
+    prevOn = e.power_ons;
+  });
+  const any = counts.some(c => c) || espRows.length;
+  setEmpty("connChart", !any);
+  $("connLegend").innerHTML = [["Messungen je 10 min", "--series-1"], ["Meldung an GitHub", "--series-2"], ["Neustart", "--bad"]]
+    .map(([n, c]) => `<span style="--c: var(${c})">${n}</span>`).join("");
+  const labels = counts.map((_, i) => hhmm(start + i * 600));
+  const opt = baseOptions("Messungen");
+  opt.scales.y.max = 12; opt.scales.y.ticks.stepSize = 2;
+  opt.scales.y.ticks.callback = v => v <= 10 ? v : "";
+  opt.scales.x.ticks.autoSkip = false;
+  opt.scales.x.ticks.callback = (v, i) => i % 12 === 0 ? labels[i] : "";
+  opt.plugins.tooltip.callbacks = { title: it => `${labels[it[0].dataIndex]}–${hhmm(start + (it[0].dataIndex + 1) * 600)} Uhr`,
+    label: it => it.datasetIndex === 0 ? ` ${it.parsed.y} Messungen` : it.datasetIndex === 1 ? ` ${info[it.dataIndex]}` : null };
+  opt.plugins.tooltip.filter = it => it.datasetIndex === 0 ? it.parsed.y > 0 : it.datasetIndex === 1 && it.parsed.y != null;
+  charts.connChart?.destroy(); delete charts.connChart;
+  draw("connChart", { type: "bar", data: { labels, datasets: [
+    { label: "Messungen", data: counts, backgroundColor: css("--series-1"), borderRadius: { topLeft: 2, topRight: 2 },
+      borderSkipped: "start", categoryPercentage: 1, barPercentage: .8, order: 3 },
+    { type: "line", label: "Meldung", data: beats, showLine: false, pointStyle: "circle", pointRadius: 4, pointHoverRadius: 6,
+      backgroundColor: css("--series-2"), borderColor: css("--surface-1"), borderWidth: 1, order: 2 },
+    { type: "line", label: "Neustart", data: boots, showLine: false, pointStyle: "triangle", pointRadius: 7, pointHoverRadius: 8,
+      backgroundColor: css("--bad"), borderColor: css("--surface-1"), borderWidth: 1, order: 1 },
+  ] }, options: opt });
+}
+
 function drawConnChart() {
+  if (connTab === "act") return drawActivity();
   const t = CONN_TABS[connTab];
   const rows = dayRows.filter(r => t.series.some(([, , f]) => isFinite(f(r)) && f(r) !== 0));
   setEmpty("connChart", !rows.length);

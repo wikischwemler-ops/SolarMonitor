@@ -97,6 +97,18 @@ def parse_st(raw: str) -> dict | None:
     return st
 
 
+def append_esp_log(data: Path, ts: int, esp: dict, rows: int) -> None:
+    """Jedes Lebenszeichen mit Uhrzeit in docs/data/esp/YYYY-MM-DD.csv (fuer die Aktivitaets-Ansicht)."""
+    path = data / "esp" / f"{datetime.fromtimestamp(ts, TZ).strftime('%Y-%m-%d')}.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new_file = not path.exists()
+    with path.open("a", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh, lineterminator="\n")
+        if new_file:
+            w.writerow(["ts", *ST_KEYS, "rows"])
+        w.writerow([ts, *[int(esp[k]) for k in ST_KEYS], rows])
+
+
 def fmt(v) -> str:
     if v is None:
         return ""
@@ -203,6 +215,7 @@ def main() -> int:
             rs = summary.setdefault("restarts", {})
             rs[stat_day] = rs.get(stat_day, 0) + esp["power_ons"] - prev["power_ons"]
         summary["esp"] = {"ts": now, **esp}
+        append_esp_log(data, now, esp, len(new))
         print(f"Lebenszeichen: {esp}")
 
     net = parse_net(args.net)
