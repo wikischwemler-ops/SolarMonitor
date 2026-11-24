@@ -60,20 +60,20 @@
   "lat": 220.0
  },
  "total_kwh": 792.4,
- "updated": 1795554523,
+ "updated": 1795555176,
  "net": {
   "ts": 1795448147,
   "up_ms": 7063,
   "lost": 4
  },
  "esp": {
-  "ts": 1795554523,
-  "boots": 1,
+  "ts": 1795555176,
+  "boots": 12,
   "power_ons": 1,
   "reset": 7,
-  "wifi_ms": 1412,
-  "fails": 1,
-  "rssi": -45,
+  "wifi_ms": 1337,
+  "fails": 12,
+  "rssi": -46,
   "night": false
  }
 }
