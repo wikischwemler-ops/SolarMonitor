@@ -56,6 +56,13 @@
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); }
   .status.on .dot { background: var(--good); animation: pulse 2s ease-in-out infinite; }
   .status.off .dot { background: var(--warn); }
+  .status.idle .dot { background: var(--series-1); }
+  .esp-line { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: 13px;
+              color: var(--text-secondary); border-top: 1px solid var(--border); padding-top: 12px; }
+  .esp-line[hidden] { display: none; }
+  .esp-line b { color: var(--text-primary); font-weight: 600; display: inline-flex; align-items: center; gap: 7px; }
+  .esp-line b::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+  .esp-line.bad b::before { background: var(--bad); }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 50%, transparent); }
                      50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--good) 0%, transparent); } }
 
@@ -251,6 +258,7 @@
         <path class="ener e3" stroke="var(--series-1)" d="M170 146 V174"/>
       </svg>
     </div>
+    <div class="esp-line" id="espLine" hidden></div>
   </section>
 
   <section class="kpis">
@@ -398,30 +406,62 @@ function drawLive() {
   const arc = $("gArc"), len = arc.getTotalLength();
   arc.style.strokeDasharray = len;
   arc.style.strokeDashoffset = len * (1 - Math.min(1, p / MAX_W));
-  countTo("gVal", online ? p : null, 0);
-  $("gCap").textContent = online ? `${nf(p / MAX_W * 100, 0)} % der Nennleistung` : "Wechselrichter ruht";
+  countTo("gVal", p, 0);                       // Wechselrichter aus: 0 W
+  $("gCap").textContent = online ? `${nf(p / MAX_W * 100, 0)} % der Nennleistung` : "Wechselrichter aus";
   const setT = (c, v) => document.querySelectorAll("." + c).forEach(e => e.textContent = v);
-  setT("fPv1", online ? `${nf(pv1, 0)} W` : "– W");
-  setT("fPv2", online ? `${nf(pv2, 0)} W` : "– W");
-  setT("fAc", online ? `${nf(p, 0)} W` : "– W");
+  setT("fPv1", `${nf(pv1, 0)} W`);
+  setT("fPv2", `${nf(pv2, 0)} W`);
+  setT("fAc", `${nf(p, 0)} W`);
   const dc = pv1 + pv2;
   setT("fEta", online && dc > 20 ? `η ${nf(Math.min(100, p / dc * 100), 0)} %` : "η –");
   // Geschwindigkeit der Energie-Punkte ~ Leistung
   const dur = w => `${Math.max(.5, Math.min(6, 60 / Math.max(w, 1)))}s`;
   const setE = (c, w, dim) => document.querySelectorAll("." + c).forEach(e => { e.style.setProperty("--dur", dur(w)); e.style.opacity = dim && w <= 1 ? .2 : 1; });
-  setE("e1", pv1, true); setE("e2", pv2, true); setE("e3", p, false);
+  setE("e1", pv1, true); setE("e2", pv2, true); setE("e3", p, true);
   $("flow").classList.toggle("idle", !online || p < 1);
   document.querySelectorAll(".sunCore").forEach(e => e.style.opacity = online ? .45 + .55 * Math.min(1, p / 300) : .3);
+}
+
+// "vor 5 min" / "um 21:05 Uhr" / "am Mo., 23.11.2026, 16:35 Uhr"
+const when = ts => { const m = (now() - ts) / 60;
+  return m < 1 ? "gerade eben" : m < 90 ? `vor ${Math.round(m)} min`
+       : dateKey(ts) === dateKey(now()) ? `um ${hhmm(ts)} Uhr` : `am ${fmtDate(dateKey(ts))}, ${hhmm(ts)} Uhr`; };
+
+// Zustand des ESP32 aus dem Lebenszeichen: [Text, ok?]
+function espState() {
+  const e = summary?.esp;
+  if (!e) return null;
+  const m = (now() - e.ts) / 60;
+  if (e.night) return m < 24 * 60 ? ["ESP32 im Nachtbetrieb, prüft alle 30 min", true] : [`ESP32 meldet sich nicht (zuletzt ${when(e.ts)})`, false];
+  if (m < 15) return ["ESP32 aktiv", true];
+  if (m < 35) return [`ESP32 verspätet (zuletzt ${when(e.ts)})`, false];
+  return [`ESP32 meldet sich nicht (zuletzt ${when(e.ts)})`, false];
 }
 
 function drawStatus() {
   const l = summary?.latest;
   if (!l) return;
-  const age = (now() - l.ts) / 60;
-  const online = age < 30;
-  $("status").className = "status " + (online ? "on" : "off");
-  const ago = age < 1 ? "gerade eben" : age < 90 ? `vor ${Math.round(age)} min` : (dateKey(l.ts) === dateKey(now()) ? `seit ${hhmm(l.ts)} Uhr` : `seit ${fmtDate(dateKey(l.ts))}`);
-  $("statusText").textContent = online ? `live · ${ago}` : `keine neuen Daten ${ago}`;
+  const online = (now() - l.ts) / 60 < 30;
+  const es = espState();
+  const sync = Math.max(summary.updated || 0, summary.esp?.ts || 0);
+  if (online) {
+    $("status").className = "status on";
+    $("statusText").textContent = `live · ${when(l.ts)}`;
+  } else {
+    // Wechselrichter aus (Nacht) oder keine Daten: Zustand des ESP32 und letzten Abgleich zeigen
+    $("status").className = "status " + (es && es[1] ? "idle" : "off");
+    $("statusText").textContent = es ? `Wechselrichter aus · ${es[1] ? (summary.esp.night ? "ESP32 Nachtbetrieb" : "ESP32 aktiv") : "ESP32 still"} · Sync ${when(sync)}`
+                                     : `keine neuen Daten seit ${when(l.ts).replace(/^(vor|um|am) /, "")}`;
+  }
+  const line = $("espLine");
+  line.hidden = online || !es;
+  if (!line.hidden) {
+    const restarts = summary.restarts?.[dateKey(now())] || 0;
+    line.className = "esp-line " + (es[1] ? "ok" : "bad");
+    line.innerHTML = `<b>${es[0]}</b><span>Letzter Sync mit GitHub ${when(sync)}</span>` +
+      `<span>Letzte Messung ${when(l.ts)}</span>` +
+      (restarts ? `<span>${restarts}× neu gestartet heute</span>` : "");
+  }
 }
 
 // ---------- Tagesverlauf ----------
