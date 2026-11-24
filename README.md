@@ -25,7 +25,7 @@
 | 📊 **Erträge** | Tage, Wochen (KW), Monate und Jahre umschaltbar, mit Trendlinie (gleitender Ø) oder als aufsummierter Verlauf (Jahre übereinander zum Vergleich); diese Woche / dieser Monat / dieses Jahr mit Vorperiode; Bestwerte |
 | 📶 **Verbindung** | WLAN-Signal des ESP32, Funksignal des Wechselrichter-Sticks, Antwortzeit des Sticks, Upload-Dauer zu GitHub, verlorene Abfragen – mit Tagesverlauf |
 | 📱 **Überall** | Responsiv für Handy, Tablet und Desktop, Hell- und Dunkelmodus |
-| 🔋 **Sparsam** | ESP32 mit ca. 0,4 W, nachts Tiefschlaf; GitHub kostenlos (öffentliches Repo) |
+| 🔋 **Sparsam und robust** | ESP32 ist pro Minute nur ca. 4 s wach und schläft sonst (Tiefschlaf); jeder Durchlauf ist ein frischer Start. GitHub kostenlos (öffentliches Repo) |
 
 <p align="center">
   <img src="docs/img/dashboard-mobile.png" alt="Dashboard auf dem Handy" width="300">
@@ -42,8 +42,10 @@
 
 1. Der **WLAN-Stick im Wechselrichter** spricht im Heimnetz das Solarman-V5-Protokoll (TCP-Port 8899).
    Zum Auslesen genügt seine Seriennummer (**„WIFI-Nummer“** auf dem Typenschild), kein Passwort.
-2. Der **ESP32** fragt jede Minute die Messwerte ab und puffert sie (bis zu 6 h, falls das Internet weg ist).
-3. Alle **10 Minuten** schickt er die gesammelten Zeilen per HTTPS (`repository_dispatch`) an GitHub.
+2. Der **ESP32** wacht jede Minute aus dem Tiefschlaf auf, wählt sich ins WLAN ein, fragt die Messwerte ab,
+   legt sie im RTC-Speicher ab (bis zu 1 h, falls das Internet weg ist) und schläft wieder.
+3. Alle **10 Minuten** schickt er die gesammelten Zeilen per HTTPS (`repository_dispatch`) an GitHub, dazu ein
+   Lebenszeichen (Neustarts und deren Grund, WLAN-Dauer) – auch wenn es gerade keine Messwerte gibt.
 4. Die **GitHub Action** [`ingest.yml`](.github/workflows/ingest.yml) prüft die Werte und schreibt sie nach
    `docs/data/days/JJJJ-MM-TT.csv` (Minutenwerte) und `docs/data/summary.json` (Tageswerte).
 5. **GitHub Pages** liefert das Dashboard [`docs/index.html`](docs/index.html) aus.
@@ -111,17 +113,19 @@ pio device monitor                                   # Log ansehen
 `secrets.h` steht in `.gitignore` und wird nie committet. Fehlen Seriennummer oder Token, bricht der Build mit
 einem Hinweis ab.
 
-Spätere Updates per WLAN: `$env:SOLAR_OTA_PASS="..."; pio run -e ota -t upload`
+Updates nur per USB: Der ESP32 schläft fast immer, ein Update per WLAN ist deshalb nicht vorgesehen.
+Klappt das Flashen nicht („Wrong boot mode“), **BOOT** halten, kurz **EN** tippen, BOOT loslassen.
 
 ### 4. GitHub Pages
 Repo → Settings → Pages → *Deploy from a branch* → `main` / `/docs`.
 
 ## Betrieb
 
-- Lokaler Status des ESP32: `http://solarmonitor.local/` (JSON: letzte Messung, Puffer, letzter Upload).
-- Erster Upload ca. 3 min nach dem Einschalten, danach alle 10 Minuten.
+- Erstes Lebenszeichen gleich nach dem Einschalten, danach alle 10 Minuten. Im Dashboard zeigt die Kachel
+  **ESP32 zuletzt gemeldet**, ob er läuft und wie oft er heute neu gestartet ist (mit Grund).
 - Nachts schaltet sich der WLAN-Stick des Wechselrichters ab. Der ESP32 erkennt das nach 15 min, lädt den
-  Rest hoch und schläft 30 min, dann prüft er erneut.
+  Rest hoch und prüft dann nur noch alle 30 min.
+- Log am PC: ESP32 per USB anstecken, `pio device monitor`.
 - Ohne ESP32 (Test oder Ersatz):
   `python tools/pc_collector.py --sn <WIFI-Nummer> --count 5 --interval 60 --dispatch wikischwemler-ops/SolarMonitor`
   (Token in `GH_TOKEN`).

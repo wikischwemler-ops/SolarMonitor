@@ -1,18 +1,19 @@
 // SolarMonitor – ESP32-WROOM-32 Collector fuer Bosswerk BW-MI600 (Deye SUN600G3, Solarman-V5-Logger)
 //
-// Ablauf:
-//   * jede Minute Holding-Register 59..112 ueber Solarman V5 (TCP 8899) lesen
-//   * Werte im RAM puffern, alle 10 min per GitHub "repository_dispatch" hochladen
+// Ablauf (jeder Durchlauf ist ein frischer Start aus dem Tiefschlaf):
+//   * jede Minute aufwachen, ins WLAN, Holding-Register 59..112 ueber Solarman V5 (TCP 8899) lesen,
+//     Messwert im RTC-Speicher ablegen, wieder schlafen (wach ca. 3 s)
+//   * alle 10 min die gesammelten Werte per GitHub "repository_dispatch" hochladen; dabei auch ein
+//     Lebenszeichen (Startgrund, Neustarts, WLAN-Dauer), auch wenn es keine Messwerte gibt
 //   * GitHub Action haengt die Werte an docs/data/ an -> GitHub Pages Dashboard
-//   * nachts (Logger aus) Tiefschlaf, alle 30 min kurz pruefen
+//   * nachts (Logger 15 min nicht erreichbar) nur alle 30 min kurz pruefen
 //   * Verbindung: WLAN-Signal ESP32, Signal des Logger-Hotspots, Antwortzeit Logger, Upload-Dauer
-//   * lokaler Status: http://solarmonitor.local/   Update per WLAN: ArduinoOTA
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <WebServer.h>
-#include <ArduinoOTA.h>
+#include <esp_sleep.h>
+#include <esp_sntp.h>
 #include <time.h>
 
 #include "secrets.h"
@@ -25,20 +26,16 @@ static_assert(sizeof(GH_TOKEN) > 40, "secrets.h: GH_TOKEN (fine-grained Token) e
 // Standort des ESP32 zeigt, wie gut der Stick funkt. Abweichenden Namen in secrets.h als LOGGER_AP setzen.
 
 // ---------- Einstellungen ----------
-static const uint32_t POLL_MS           = 60UL * 1000;        // Abfrageintervall
-static const uint32_t FLUSH_MS          = 10UL * 60 * 1000;   // Upload-Intervall (oeffentliches Repo: Actions kostenlos)
-static const uint32_t FIRST_FLUSH_MS    = 3UL * 60 * 1000;    // erster Upload kurz nach Start
-static const int      MAX_ROWS          = 360;                // Puffer: 6 h falls GitHub nicht erreichbar
-static const int      ROWS_PER_UPLOAD   = 120;
-static const int      NIGHT_AFTER_FAILS = 15;                 // 15 min kein Logger -> Nacht
-static const int      FAILS_AFTER_WAKE  = 3;                  // nach Aufwachen: 3 Versuche
-static const uint64_t NIGHT_SLEEP_US    = 30ULL * 60 * 1000000;
+static const uint32_t CYCLE_S           = 60;                 // Messtakt
+static const uint32_t UPLOAD_S          = 10 * 60;            // Upload- und Lebenszeichen-Takt
+static const uint32_t NIGHT_S           = 30 * 60;            // Pruefintervall nachts
+static const int      NIGHT_AFTER_FAILS = 15;                 // 15 Abfragen ohne Logger -> Nacht
+static const int      RTC_ROWS          = 60;                 // Puffer im RTC-Speicher (1 h)
+static const int      ROWS_PER_UPLOAD   = 60;
+static const uint32_t WIFI_TIMEOUT_MS   = 15000;
 static const uint16_t REG_FIRST         = 59;
 static const uint16_t REG_COUNT         = 54;                 // 59..112
-static const uint32_t SCAN_MS           = 10UL * 60 * 1000;   // Hotspot-Signal alle 10 min messen
-
-RTC_DATA_ATTR uint32_t bootCount = 0;
-RTC_DATA_ATTR bool     wokeFromNight = false;
+static const time_t   TIME_VALID        = 1700000000;
 
 struct Sample {
   uint32_t ts;                       // Unix-Zeit UTC
@@ -50,23 +47,26 @@ struct Sample {
   uint16_t lat;                      // Antwortzeit des Loggers, ms
 };
 
-static Sample   buf[MAX_ROWS];
-static int      nRows = 0;
-static Sample   last{};
-static bool     haveLast = false;
-static int      fails = 0;
-static uint32_t lastPoll = 0, lastFlush = 0;
-static int      lastUploadCode = 0;
-static uint32_t lastUploadTs = 0;
-static uint8_t  seqNo = 0;
-static uint32_t wifiLostSince = 0;
-static uint16_t lastLatMs = 0;           // Antwortzeit der letzten erfolgreichen Abfrage
-static int8_t   apRssi = 0;              // zuletzt gemessenes Hotspot-Signal (0 = nicht gefunden)
-static uint32_t lastScan = 0;
-static uint32_t lastUploadMs = 0;        // Dauer des letzten erfolgreichen Uploads
-static uint16_t lostPolls = 0;           // fehlgeschlagene Abfragen seit dem letzten Upload
+// ---------- Zustand, bleibt im Tiefschlaf erhalten ----------
+RTC_DATA_ATTR Sample   rtcBuf[RTC_ROWS];
+RTC_DATA_ATTR int      rtcN = 0;
+RTC_DATA_ATTR uint32_t bootCount = 0;        // Durchlaeufe seit dem Einschalten
+RTC_DATA_ATTR uint32_t powerOns = 0;         // Starts, die nicht aus dem Tiefschlaf kamen
+RTC_DATA_ATTR int      lastHardReset = 0;    // Grund des letzten solchen Starts (esp_reset_reason_t)
+RTC_DATA_ATTR int      fails = 0;            // Abfragen ohne Logger in Folge
+RTC_DATA_ATTR uint16_t lostPolls = 0;        // verlorene Abfragen seit dem letzten Upload
+RTC_DATA_ATTR uint32_t lastUploadTs = 0;     // Unix-Zeit des letzten erfolgreichen Uploads
+RTC_DATA_ATTR uint32_t lastUploadMs = 0;     // Dauer des letzten erfolgreichen Uploads
+RTC_DATA_ATTR uint32_t lastNtpTs = 0;
+RTC_DATA_ATTR int8_t   apRssi = 0;
+RTC_DATA_ATTR uint32_t lastScanTs = 0;
+RTC_DATA_ATTR uint8_t  seqNo = 0;
+RTC_DATA_ATTR bool     night = false;
+RTC_DATA_ATTR uint16_t wifiFailsInRow = 0;
+
+static uint16_t lastLatMs = 0;
+static uint32_t wifiMs = 0;
 static char     apName[24];
-static WebServer server(80);
 
 // ---------- Modbus / Solarman V5 ----------
 static uint16_t crc16(const uint8_t* d, size_t n) {
@@ -168,6 +168,15 @@ static bool pollInverter(Sample& s) {
   return true;
 }
 
+// ---------- Puffer ----------
+static void store(const Sample& s) {
+  if (rtcN == RTC_ROWS) {                  // Puffer voll: aelteste Zeile verwerfen
+    memmove(rtcBuf, rtcBuf + 1, (RTC_ROWS - 1) * sizeof(Sample));
+    rtcN--;
+  }
+  rtcBuf[rtcN++] = s;
+}
+
 // ---------- Upload ----------
 static int formatRow(const Sample& s, char* o, size_t cap) {
   return snprintf(o, cap, "%lu,%.1f,%.1f,%.1f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%u",
@@ -175,18 +184,25 @@ static int formatRow(const Sample& s, char* o, size_t cap) {
                   s.rssi, s.ap, s.lat);
 }
 
-static bool uploadChunk(int count) {
+// Schickt bis zu `count` Zeilen (auch 0 = nur Lebenszeichen). Gibt den HTTP-Code zurueck.
+static int uploadChunk(int count) {
   String body;
-  body.reserve(count * 80 + 160);
+  body.reserve(count * 80 + 256);
   // net = Dauer des vorigen Uploads (ms), verlorene Abfragen seit dem vorigen Upload
-  char net[32];
+  // st  = Durchlaeufe, Starts ohne Tiefschlaf, Grund des letzten solchen Starts, WLAN-Dauer (ms),
+  //       Abfragen ohne Logger in Folge, WLAN-Signal (dBm), Nachtmodus
+  char net[32], st[80];
   snprintf(net, sizeof net, "%lu,%u", (unsigned long)lastUploadMs, lostPolls);
-  body += "{\"event_type\":\"solar-data\",\"client_payload\":{\"v\":2,\"net\":\"";
+  snprintf(st, sizeof st, "%lu,%lu,%d,%lu,%d,%d,%d", (unsigned long)bootCount, (unsigned long)powerOns,
+           lastHardReset, (unsigned long)wifiMs, fails, (int)WiFi.RSSI(), night ? 1 : 0);
+  body += "{\"event_type\":\"solar-data\",\"client_payload\":{\"v\":3,\"net\":\"";
   body += net;
+  body += "\",\"st\":\"";
+  body += st;
   body += "\",\"rows\":\"";
   char line[112];
   for (int k = 0; k < count; k++) {
-    formatRow(buf[k], line, sizeof line);
+    formatRow(rtcBuf[k], line, sizeof line);
     if (k) body += ';';
     body += line;
   }
@@ -196,62 +212,39 @@ static bool uploadChunk(int count) {
   tls.setCACert(GITHUB_ROOT_CAS);
   HTTPClient http;
   http.setTimeout(20000);
-  if (!http.begin(tls, "https://api.github.com/repos/" GH_REPO "/dispatches")) return false;
+  if (!http.begin(tls, "https://api.github.com/repos/" GH_REPO "/dispatches")) return -1;
   http.addHeader("Authorization", "Bearer " GH_TOKEN);
   http.addHeader("Accept", "application/vnd.github+json");
   http.addHeader("X-GitHub-Api-Version", "2022-11-28");
   http.addHeader("User-Agent", "SolarMonitor-ESP32");
   http.addHeader("Content-Type", "application/json");
   const uint32_t t0 = millis();
-  lastUploadCode = http.POST(body);
+  int code = http.POST(body);
   const uint32_t dt = millis() - t0;
   http.end();
-  if (lastUploadCode == 204) {
+  Serial.printf("Upload %d Zeilen -> HTTP %d (%lu ms)\n", count, code, (unsigned long)dt);
+  if (code == 204) {
     lastUploadTs = (uint32_t)time(nullptr);
     lastUploadMs = dt;
     lostPolls = 0;
   }
-  Serial.printf("Upload %d Zeilen -> HTTP %d (%lu ms)\n", count, lastUploadCode, (unsigned long)dt);
-  return lastUploadCode == 204;
+  return code;
 }
 
-static bool flushBuffer() {
-  lastFlush = millis();
-  while (nRows > 0) {
-    int c = min(nRows, ROWS_PER_UPLOAD);
-    if (!uploadChunk(c)) return false;
-    memmove(buf, buf + c, (nRows - c) * sizeof(Sample));
-    nRows -= c;
-  }
+// Laedt alles hoch (mindestens ein Lebenszeichen). true, wenn alles angekommen ist.
+static bool flush() {
+  do {
+    int c = min(rtcN, ROWS_PER_UPLOAD);
+    if (uploadChunk(c) != 204) return false;
+    memmove(rtcBuf, rtcBuf + c, (rtcN - c) * sizeof(Sample));
+    rtcN -= c;
+  } while (rtcN > 0);
   return true;
-}
-
-static void store(const Sample& s) {
-  if (nRows == MAX_ROWS) {                 // Puffer voll: aelteste Zeile verwerfen
-    memmove(buf, buf + 1, (MAX_ROWS - 1) * sizeof(Sample));
-    nRows--;
-  }
-  buf[nRows++] = s;
-}
-
-// ---------- Lokaler Status ----------
-static void handleStatus() {
-  char row[112] = "";
-  if (haveLast) formatRow(last, row, sizeof row);
-  char o[700];
-  snprintf(o, sizeof o,
-           "{\"last\":\"%s\",\"columns\":\"ts,p,u,i,f,t,u1,i1,u2,i2,e_day,e_total,rssi,ap,lat\","
-           "\"buffered\":%d,\"fails\":%d,\"lost\":%u,\"upload_http\":%d,\"upload_ts\":%lu,\"upload_ms\":%lu,"
-           "\"uptime_s\":%lu,\"boots\":%lu,\"rssi\":%d,\"ap\":\"%s\",\"ap_rssi\":%d,\"lat_ms\":%u,\"heap\":%u}",
-           row, nRows, fails, lostPolls, lastUploadCode, (unsigned long)lastUploadTs, (unsigned long)lastUploadMs,
-           (unsigned long)(millis() / 1000), (unsigned long)bootCount, WiFi.RSSI(), apName, apRssi, lastLatMs,
-           ESP.getFreeHeap());
-  server.send(200, "application/json", o);
 }
 
 // ---------- Hotspot-Signal des Loggers ----------
 static void scanLoggerAp() {
-  lastScan = millis();
+  lastScanTs = (uint32_t)time(nullptr);
   // nur nach dem Hotspot suchen (kurz, die bestehende WLAN-Verbindung bleibt erhalten)
   int n = WiFi.scanNetworks(false, true, false, 120, 0, apName);
   int8_t best = 0;
@@ -262,88 +255,102 @@ static void scanLoggerAp() {
   Serial.printf("Hotspot %s: %d dBm\n", apName, apRssi);
 }
 
-// ---------- Nacht ----------
-static void goToSleep() {
-  Serial.println("Logger nicht erreichbar -> Tiefschlaf 30 min");
-  if (nRows) flushBuffer();
-  wokeFromNight = true;
+// ---------- Ablauf ----------
+static bool connectWifi() {
+  const uint32_t t0 = millis();
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname("solarmonitor");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_TIMEOUT_MS) delay(50);
+  wifiMs = millis() - t0;
+  return WiFi.status() == WL_CONNECTED;
+}
+
+static void syncTime() {
+  configTzTime("UTC0", "pool.ntp.org", "time.google.com");
+  // nach einem Stromausfall gibt es noch keine Uhrzeit: dann bis zu 10 s warten, sonst 2 s
+  const time_t before = time(nullptr);
+  const int tries = before < TIME_VALID ? 40 : 8;
+  for (int k = 0; k < tries; k++) {
+    delay(250);
+    if (time(nullptr) >= TIME_VALID && (before < TIME_VALID || sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED)) break;
+  }
+  if (time(nullptr) >= TIME_VALID) lastNtpTs = (uint32_t)time(nullptr);
+}
+
+[[noreturn]] static void sleepFor(uint32_t seconds) {
+  if (seconds < 5) seconds = 5;
+  Serial.printf("schlafe %lu s (wach %lu ms)\n", (unsigned long)seconds, (unsigned long)millis());
+  Serial.flush();
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
-  esp_sleep_enable_timer_wakeup(NIGHT_SLEEP_US);
+  esp_sleep_enable_timer_wakeup((uint64_t)seconds * 1000000ULL);
   esp_deep_sleep_start();
 }
 
-static bool connectWifi(uint32_t timeoutMs) {
-  WiFi.mode(WIFI_STA);
-  WiFi.setHostname("solarmonitor");
-  WiFi.setSleep(true);                     // Modem-Sleep: spart Strom zwischen den Abfragen
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < timeoutMs) delay(250);
-  return WiFi.status() == WL_CONNECTED;
+// Restzeit bis zum naechsten Takt, damit die Messungen im Minutenraster bleiben
+static uint32_t untilNext(uint32_t period) {
+  const uint32_t awake = millis() / 1000;
+  return awake >= period ? 5 : period - awake;
 }
 
 void setup() {
   setCpuFrequencyMhz(80);
   Serial.begin(115200);
   bootCount++;
-  Serial.printf("\nSolarMonitor Start #%lu (Nacht-Wake: %d)\n", (unsigned long)bootCount, wokeFromNight);
-
-  if (!connectWifi(30000)) {
-    Serial.println("WLAN nicht verbunden -> 5 min schlafen");
-    esp_sleep_enable_timer_wakeup(5ULL * 60 * 1000000);
-    esp_deep_sleep_start();
+  const esp_reset_reason_t reason = esp_reset_reason();
+  if (reason != ESP_RST_DEEPSLEEP) {        // Einschalten, Absturz, Spannungseinbruch ...
+    powerOns++;
+    lastHardReset = (int)reason;
   }
-  Serial.printf("WLAN ok: %s (%d dBm)\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
 #ifdef LOGGER_AP
   snprintf(apName, sizeof apName, "%s", LOGGER_AP);
 #else
   snprintf(apName, sizeof apName, "AP_%lu", (unsigned long)LOGGER_SN);
 #endif
-  scanLoggerAp();
+  Serial.printf("\nSolarMonitor #%lu, Grund %d, Puffer %d, Nacht %d\n", (unsigned long)bootCount, (int)reason, rtcN, night);
 
-  configTzTime("UTC0", "pool.ntp.org", "time.google.com");
-  for (int k = 0; k < 40 && time(nullptr) < 1700000000; k++) delay(250);
-
-  ArduinoOTA.setHostname("solarmonitor");
-  ArduinoOTA.setPassword(OTA_PASS);
-  ArduinoOTA.begin();
-  server.on("/", handleStatus);
-  server.begin();
-
-  fails = wokeFromNight ? NIGHT_AFTER_FAILS - FAILS_AFTER_WAKE : 0;
-  wokeFromNight = false;
-  lastPoll = millis() - POLL_MS;                     // sofort abfragen
-  lastFlush = millis() - FLUSH_MS + FIRST_FLUSH_MS;  // erster Upload nach 3 min
-}
-
-void loop() {
-  ArduinoOTA.handle();
-  server.handleClient();
-
-  if (WiFi.status() != WL_CONNECTED) {
-    if (!wifiLostSince) wifiLostSince = millis();
-    if (millis() - wifiLostSince > 5UL * 60 * 1000) ESP.restart();
-  } else {
-    wifiLostSince = 0;
+  if (!connectWifi()) {
+    wifiFailsInRow++;
+    Serial.printf("WLAN nicht verbunden (%u. Mal in Folge)\n", wifiFailsInRow);
+    if (!night) lostPolls++;
+    sleepFor(wifiFailsInRow > 5 ? 5 * 60 : CYCLE_S);  // laenger ohne WLAN: seltener versuchen
   }
+  wifiFailsInRow = 0;
+  Serial.printf("WLAN ok: %s (%d dBm, %lu ms)\n", WiFi.localIP().toString().c_str(), WiFi.RSSI(), (unsigned long)wifiMs);
 
-  if (millis() - lastPoll >= POLL_MS) {
-    lastPoll = millis();
-    Sample s;
-    if (time(nullptr) <= 1700000000) Serial.println("Uhrzeit noch nicht synchronisiert (NTP)");
-    if (time(nullptr) > 1700000000 && pollInverter(s)) {
-      fails = 0;
-      last = s; haveLast = true;
-      store(s);
-      Serial.printf("P=%.1f W  heute=%.1f kWh  gesamt=%.1f kWh  Logger %u ms\n", s.p, s.eDay, s.eTotal, s.lat);
-    } else {
+  uint32_t now = (uint32_t)time(nullptr);
+  const bool uploadDue = now < TIME_VALID || now - lastUploadTs >= UPLOAD_S;
+  if (now < TIME_VALID || now - lastNtpTs >= 6 * 3600 || uploadDue) syncTime();
+  now = (uint32_t)time(nullptr);
+
+  // Hotspot-Signal alle 10 min messen (tagsueber)
+  if (!night && (now - lastScanTs >= UPLOAD_S)) scanLoggerAp();
+
+  Sample s;
+  if (now >= TIME_VALID && pollInverter(s)) {
+    if (night) Serial.println("Logger wieder da -> Tagbetrieb");
+    night = false;
+    fails = 0;
+    store(s);
+    Serial.printf("P=%.1f W  heute=%.1f kWh  gesamt=%.1f kWh  Logger %u ms\n", s.p, s.eDay, s.eTotal, s.lat);
+  } else {
+    if (now < TIME_VALID) Serial.println("Uhrzeit noch nicht synchronisiert (NTP)");
+    if (!night) {
       if (lostPolls < 60000) lostPolls++;
-      if (++fails >= NIGHT_AFTER_FAILS) goToSleep();
+      if (++fails >= NIGHT_AFTER_FAILS) {
+        Serial.println("Logger 15 min nicht erreichbar -> Nachtbetrieb");
+        night = true;
+        flush();                            // Rest hochladen und Lebenszeichen "Nacht"
+        sleepFor(NIGHT_S);
+      }
+    } else {
+      sleepFor(NIGHT_S);                    // nachts: kein Upload, weiter schlafen
     }
   }
 
-  if (millis() - lastScan >= SCAN_MS) scanLoggerAp();
-  if (nRows && millis() - lastFlush >= FLUSH_MS) flushBuffer();
-  delay(10);
+  if (now >= TIME_VALID && (uploadDue || rtcN >= RTC_ROWS - 1)) flush();
+  sleepFor(untilNext(CYCLE_S));
 }
+
+void loop() {}   // wird nie erreicht: jeder Durchlauf endet im Tiefschlaf

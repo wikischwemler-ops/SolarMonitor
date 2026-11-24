@@ -139,7 +139,7 @@
   .periods .h { font-size: 11px; color: var(--text-muted); }
 
   /* ---- Verbindung ---- */
-  .conn { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .conn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .conn > div { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; min-width: 0; }
   .conn .l { font-size: 12px; color: var(--text-secondary); }
   .conn .v { font-size: 22px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; margin: 2px 0; white-space: nowrap; }
@@ -159,9 +159,6 @@
     .kpis { grid-template-columns: repeat(2, 1fr); }
     .grid3 { grid-template-columns: 1fr 1fr; }
     .grid3 > :last-child { grid-column: 1 / -1; }
-    .conn { grid-template-columns: repeat(6, 1fr); }
-    .conn > div { grid-column: span 2; }
-    .conn > div:nth-child(n+4) { grid-column: span 3; }
   }
   /* Handy */
   @media (max-width: 640px) {
@@ -185,8 +182,6 @@
     .card-head .note { width: 100%; order: 3; }
     .periods { grid-template-columns: 1fr 1fr; }
     .conn { grid-template-columns: 1fr 1fr; }
-    .conn > div, .conn > div:nth-child(n+4) { grid-column: auto; }
-    .conn > div:last-child { grid-column: 1 / -1; }
     .conn .v { font-size: 19px; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -689,6 +684,24 @@ const qual = (v, steps, higherBetter, hint) => {
 };
 const tile = (label, v, unit, d, q) => `<div><div class="l">${label}</div><div class="v">${v == null ? "–" : nf(v, d)}${v == null ? "" : `<small>${unit}</small>`}</div>${q}</div>`;
 
+// Lebenszeichen des ESP32: wann zuletzt gemeldet, Neustarts heute und deren Grund
+const RESET_TXT = { 1: "Strom eingeschaltet", 3: "Neustart per Software", 4: "Absturz", 5: "Watchdog", 6: "Watchdog",
+                    7: "Einschalten oder Reset", 9: "Spannungseinbruch (Netzteil?)", 10: "Neustart", 11: "USB", 15: "Spannungseinbruch" };
+function espTile() {
+  const e = summary?.esp;
+  if (!e) return tile("ESP32 zuletzt gemeldet", null, "", 0, qual(null, LAT, false, "ab der neuen Firmware"));
+  const ageMin = (now() - e.ts) / 60;
+  // nachts meldet er sich bewusst nicht; tagsueber alle 10 min
+  const steps = e.night ? [[24 * 60, "Nachtbetrieb", "good", 4], [1e9, "keine Meldung", "bad", 0]]
+                        : [[15, "aktiv", "good", 4], [35, "verspätet", "warn", 2], [1e9, "keine Meldung", "bad", 0]];
+  const [, txt, cls, n] = grade(ageMin, steps, false);
+  const restarts = summary.restarts?.[dateKey(now())] || 0;
+  const why = restarts ? ` · ${restarts}× neu gestartet heute (${RESET_TXT[e.reset] || "Grund " + e.reset})` : "";
+  const ago = ageMin < 90 ? `${Math.max(0, Math.round(ageMin))}` : null;
+  return `<div><div class="l">ESP32 zuletzt gemeldet</div><div class="v">${ago ?? hhmm(e.ts)}<small>${ago ? "min" : "Uhr"}</small></div>` +
+    `<span class="q ${cls}"><span class="bars" aria-hidden="true">${[1, 2, 3, 4].map(i => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</span>${txt}${why}</span></div>`;
+}
+
 function drawConn() {
   const l = summary?.latest || {}, net = summary?.net, today = dateKey(now()), d = summary?.days?.[today];
   const fresh = l.ts && now() - l.ts < 30 * 60;
@@ -700,6 +713,7 @@ function drawConn() {
     tile("Antwortzeit WR-Stick", l.lat, "ms", 0, qual(l.lat ?? null, LAT, false)),
     tile("Upload zu GitHub", net?.up_ms ? net.up_ms / 1000 : null, "s", 1, qual(net?.up_ms || null, UP, false)),
     tile("Verlorene Abfragen heute", loss, "%", 1, qual(loss, LOSS, false, "noch keine Daten")),
+    espTile(),
   ].join("");
   const parts = [];
   if (l.ts && l.rssi != null) parts.push(fresh ? `Stand ${hhmm(l.ts)} Uhr` : `letzter Stand ${fmtDate(dateKey(l.ts))}, ${hhmm(l.ts)} Uhr`);
