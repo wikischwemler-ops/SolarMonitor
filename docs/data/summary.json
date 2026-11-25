@@ -60,20 +60,23 @@
   "lat": 220.0
  },
  "total_kwh": 792.4,
- "updated": 1795587564,
+ "updated": 1795587636,
  "net": {
   "ts": 1795448147,
   "up_ms": 7063,
   "lost": 4
  },
  "esp": {
-  "ts": 1795587564,
+  "ts": 1795587636,
   "boots": 1,
   "power_ons": 1,
   "reset": 7,
-  "wifi_ms": 1413,
+  "wifi_ms": 1412,
   "fails": 1,
-  "rssi": -48,
-  "night": false
+  "rssi": -46,
+  "night": false,
+  "ip": "192.168.0.112",
+  "logger_ip": "192.168.0.155",
+  "name": "solarmonitor-esp32"
  }
 }
