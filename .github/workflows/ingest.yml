@@ -30,6 +30,7 @@ jobs:
           ROWS: ${{ github.event.client_payload.rows || inputs.rows }}
           NET: ${{ github.event.client_payload.net }}
           ST: ${{ github.event.client_payload.st }}
+          IP: ${{ github.event.client_payload.ip }}
         run: python3 tools/ingest.py
 
       - name: Commit

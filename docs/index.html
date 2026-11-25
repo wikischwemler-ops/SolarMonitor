@@ -150,6 +150,7 @@
   .conn > div { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; min-width: 0; }
   .conn .l { font-size: 12px; color: var(--text-secondary); }
   .conn .v { font-size: 22px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; margin: 2px 0; white-space: nowrap; }
+  .conn .ip { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
   .conn .v.stamp { font-size: 18px; padding: 3px 0; }
   .conn .v small { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-left: 2px; }
   .q { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
@@ -459,7 +460,8 @@ function drawStatus() {
     line.className = "esp-line " + (es[1] ? "ok" : "bad");
     line.innerHTML = `<b>${es[0]}</b><span>Letzter Sync mit GitHub: ${when(sync)}</span>` +
       `<span>Letzte Messung: ${when(l.ts)}</span>` +
-      (restarts ? `<span>${restarts}× neu gestartet heute</span>` : "");
+      (restarts ? `<span>${restarts}× neu gestartet heute</span>` : "") +
+      (summary.esp?.ip ? `<span>${summary.esp.name || "ESP32"} ${summary.esp.ip} · WR-Stick ${summary.esp.logger_ip || "–"}</span>` : "");
   }
 }
 
@@ -728,7 +730,7 @@ const qual = (v, steps, higherBetter, hint) => {
   const [, txt, cls, n] = grade(v, steps, higherBetter);
   return `<span class="q ${cls}"><span class="bars" aria-hidden="true">${[1, 2, 3, 4].map(i => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</span>${txt}</span>`;
 };
-const tile = (label, v, unit, d, q) => `<div><div class="l">${label}</div><div class="v">${v == null ? "–" : nf(v, d)}${v == null ? "" : `<small>${unit}</small>`}</div>${q}</div>`;
+const tile = (label, v, unit, d, q, ip) => `<div><div class="l">${label}</div><div class="v">${v == null ? "–" : nf(v, d)}${v == null ? "" : `<small>${unit}</small>`}</div>${q}${ip ? `<div class="ip">IP ${ip}</div>` : ""}</div>`;
 
 // Lebenszeichen des ESP32: wann zuletzt gemeldet, Neustarts heute und deren Grund
 const RESET_TXT = { 1: "Strom eingeschaltet", 3: "Neustart per Software", 4: "Absturz", 5: "Watchdog", 6: "Watchdog",
@@ -753,9 +755,9 @@ function drawConn() {
   const loss = d && d.lost != null ? d.lost / (d.samples + d.lost) * 100 : null;
   const upAvg = d?.up_n ? d.up_ms_sum / d.up_n : null;
   $("conn").innerHTML = [
-    tile("WLAN ESP32 → Router", l.rssi, "dBm", 0, qual(l.rssi ?? null, SIG, true)),
+    tile("WLAN ESP32 → Router", l.rssi, "dBm", 0, qual(l.rssi ?? null, SIG, true), summary?.esp?.ip && `${summary.esp.ip}${summary.esp.name ? " · " + summary.esp.name : ""}`),
     tile("Funk WR-Stick am ESP32", l.ap, "dBm", 0, qual(l.ap ?? null, SIG, true, l.rssi != null ? "Hotspot nicht gefunden" : null)),
-    tile("Antwortzeit WR-Stick", l.lat, "ms", 0, qual(l.lat ?? null, LAT, false)),
+    tile("Antwortzeit WR-Stick", l.lat, "ms", 0, qual(l.lat ?? null, LAT, false), summary?.esp?.logger_ip),
     tile("Upload zu GitHub", net?.up_ms ? net.up_ms / 1000 : null, "s", 1, qual(net?.up_ms || null, UP, false)),
     tile("Verlorene Abfragen heute", loss, "%", 1, qual(loss, LOSS, false, "noch keine Daten")),
     espTile(),
