@@ -110,7 +110,7 @@ def parse_ip(raw: str) -> dict:
             continue
         if addr.is_private:
             out[key] = str(addr)
-    if len(parts) > 2 and re.fullmatch(r"[a-z0-9-]{1,40}", parts[2].strip()):
+    if len(parts) > 2 and re.fullmatch(r"[A-Za-z0-9_-]{1,40}", parts[2].strip()):
         out["name"] = parts[2].strip()
     return out
 

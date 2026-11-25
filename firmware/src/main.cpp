@@ -36,7 +36,7 @@ static const uint32_t WIFI_TIMEOUT_MS   = 15000;
 static const uint16_t REG_FIRST         = 59;
 static const uint16_t REG_COUNT         = 54;                 // 59..112
 static const time_t   TIME_VALID        = 1700000000;
-static const char*    HOSTNAME          = "solarmonitor-esp32";  // Name im Router / in der Geraeteliste
+static const char*    HOSTNAME          = "ESP32_sMonitor";  // Name im Router / in der Geraeteliste
 
 struct Sample {
   uint32_t ts;                       // Unix-Zeit UTC
