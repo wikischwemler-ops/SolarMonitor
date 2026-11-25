@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import ipaddress
 import json
 import math
 import os
+import re
 import sys
 import time
 from datetime import datetime
@@ -97,6 +99,22 @@ def parse_st(raw: str) -> dict | None:
     return st
 
 
+def parse_ip(raw: str) -> dict:
+    """'ESP32-IP,Stick-IP[,Name]' -> nur private IPv4-Adressen und ein einfacher Geraetename werden uebernommen."""
+    out = {}
+    parts = raw.split(",")
+    for key, val in zip(("ip", "logger_ip"), parts):
+        try:
+            addr = ipaddress.IPv4Address(val.strip())
+        except ValueError:
+            continue
+        if addr.is_private:
+            out[key] = str(addr)
+    if len(parts) > 2 and re.fullmatch(r"[a-z0-9-]{1,40}", parts[2].strip()):
+        out["name"] = parts[2].strip()
+    return out
+
+
 def append_esp_log(data: Path, ts: int, esp: dict, rows: int) -> None:
     """Jedes Lebenszeichen mit Uhrzeit in docs/data/esp/YYYY-MM-DD.csv (fuer die Aktivitaets-Ansicht)."""
     path = data / "esp" / f"{datetime.fromtimestamp(ts, TZ).strftime('%Y-%m-%d')}.csv"
@@ -170,6 +188,7 @@ def main() -> int:
     ap.add_argument("--rows", default=os.environ.get("ROWS", ""))
     ap.add_argument("--net", default=os.environ.get("NET", ""))
     ap.add_argument("--st", default=os.environ.get("ST", ""))
+    ap.add_argument("--ip", default=os.environ.get("IP", ""))
     ap.add_argument("--data", default="docs/data")
     args = ap.parse_args()
 
@@ -214,7 +233,8 @@ def main() -> int:
         if "power_ons" in prev and esp["power_ons"] > prev["power_ons"]:
             rs = summary.setdefault("restarts", {})
             rs[stat_day] = rs.get(stat_day, 0) + esp["power_ons"] - prev["power_ons"]
-        summary["esp"] = {"ts": now, **esp}
+        keep = {k: prev[k] for k in ("ip", "logger_ip", "name") if k in prev}   # letzte gueltige IPs behalten
+        summary["esp"] = {"ts": now, **esp, **keep, **parse_ip(args.ip)}
         append_esp_log(data, now, esp, len(new))
         print(f"Lebenszeichen: {esp}")
 

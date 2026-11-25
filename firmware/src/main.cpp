@@ -36,6 +36,7 @@ static const uint32_t WIFI_TIMEOUT_MS   = 15000;
 static const uint16_t REG_FIRST         = 59;
 static const uint16_t REG_COUNT         = 54;                 // 59..112
 static const time_t   TIME_VALID        = 1700000000;
+static const char*    HOSTNAME          = "solarmonitor-esp32";  // Name im Router / in der Geraeteliste
 
 struct Sample {
   uint32_t ts;                       // Unix-Zeit UTC
@@ -199,6 +200,12 @@ static int uploadChunk(int count) {
   body += net;
   body += "\",\"st\":\"";
   body += st;
+  body += "\",\"ip\":\"";                   // eigene IP und IP des Wechselrichter-Sticks (Heimnetz)
+  body += WiFi.localIP().toString();
+  body += ",";
+  body += LOGGER_IP;
+  body += ",";
+  body += HOSTNAME;
   body += "\",\"rows\":\"";
   char line[112];
   for (int k = 0; k < count; k++) {
@@ -258,8 +265,8 @@ static void scanLoggerAp() {
 // ---------- Ablauf ----------
 static bool connectWifi() {
   const uint32_t t0 = millis();
+  WiFi.setHostname(HOSTNAME);              // vor mode()/begin(), sonst schickt der ESP32 "esp32-xxxxxx"
   WiFi.mode(WIFI_STA);
-  WiFi.setHostname("solarmonitor");
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_TIMEOUT_MS) delay(50);
   wifiMs = millis() - t0;
