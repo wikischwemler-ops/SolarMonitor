@@ -52,9 +52,9 @@
    "rssi_avg": -49.8,
    "ap_avg": -73.1,
    "lat_avg": 441.4,
-   "lost": 19,
-   "up_n": 40,
-   "up_ms_sum": 273910,
+   "lost": 22,
+   "up_n": 41,
+   "up_ms_sum": 280854,
    "up_ms_max": 6972
   }
  },
@@ -76,21 +76,21 @@
   "lat": 1532.0
  },
  "total_kwh": 793.6,
- "updated": 1795880526,
+ "updated": 1795880703,
  "net": {
-  "ts": 1795880526,
-  "up_ms": 6910,
-  "lost": 11
+  "ts": 1795880703,
+  "up_ms": 6944,
+  "lost": 3
  },
  "esp": {
-  "ts": 1795880526,
-  "boots": 12,
+  "ts": 1795880703,
+  "boots": 15,
   "power_ons": 1,
   "reset": 1,
   "wifi_ms": 1325,
-  "fails": 12,
+  "fails": 15,
   "rssi": -53,
-  "night": false,
+  "night": true,
   "ip": "192.168.0.112",
   "logger_ip": "192.168.0.155",
   "name": "ESP32_sMonitor"
