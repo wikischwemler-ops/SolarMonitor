@@ -52,9 +52,9 @@
    "rssi_avg": -49.8,
    "ap_avg": -73.1,
    "lat_avg": 441.4,
-   "lost": 8,
-   "up_n": 39,
-   "up_ms_sum": 267000,
+   "lost": 19,
+   "up_n": 40,
+   "up_ms_sum": 273910,
    "up_ms_max": 6972
   }
  },
@@ -76,20 +76,20 @@
   "lat": 1532.0
  },
  "total_kwh": 793.6,
- "updated": 1795879875,
+ "updated": 1795880526,
  "net": {
-  "ts": 1795879875,
-  "up_ms": 0,
-  "lost": 1
+  "ts": 1795880526,
+  "up_ms": 6910,
+  "lost": 11
  },
  "esp": {
-  "ts": 1795879875,
-  "boots": 1,
+  "ts": 1795880526,
+  "boots": 12,
   "power_ons": 1,
   "reset": 1,
-  "wifi_ms": 1471,
-  "fails": 1,
-  "rssi": -59,
+  "wifi_ms": 1325,
+  "fails": 12,
+  "rssi": -53,
   "night": false,
   "ip": "192.168.0.112",
   "logger_ip": "192.168.0.155",
